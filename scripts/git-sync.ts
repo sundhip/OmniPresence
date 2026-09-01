@@ -37,7 +37,16 @@ async function initAndCommit() {
 
   // 3. Stage all files respecting .gitignore
   console.log("Staging project files...");
-  const statusMatrix = await git.statusMatrix({ fs, dir });
+  const statusMatrix = await git.statusMatrix({
+    fs,
+    dir,
+    filter: (f) =>
+      !f.startsWith("node_modules") &&
+      !f.startsWith(".next") &&
+      !f.startsWith(".git") &&
+      !f.includes("venv") &&
+      !f.includes("__pycache__"),
+  });
 
   let stagedCount = 0;
   for (const [filepath, headStatus, workdirStatus, stageStatus] of statusMatrix) {
@@ -65,7 +74,7 @@ async function initAndCommit() {
       fs,
       dir,
       author,
-      message: "feat: OmniPresence - OP AI Personal Intelligence Platform (Phase 1 with digital wardrobe, outfit planning, weather context, and controlled color vocabulary)",
+      message: "feat: OmniPresence - Full Platform with 4-Layer OP AI Assistant, FashionCLIP Vision, Marketplace Live Providers, Calendar & Transit, Multi-Category Finance, and Direct Grooming QA",
     });
     console.log(`✓ Committed all changes: ${commitSha}`);
   } catch (err: any) {

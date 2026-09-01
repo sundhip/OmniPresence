@@ -13,37 +13,38 @@ import {
   User,
   Settings,
   Calendar,
-  HeartPulse,
   Wallet,
   Sun,
   Moon,
   LogOut,
   Layers,
+  ShoppingBag,
+  Bot,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
-  const { theme, resolvedTheme, toggleTheme } = useTheme();
+  const { resolvedTheme, toggleTheme } = useTheme();
 
   const navItems = [
     { label: "Home", href: "/home", icon: <Home className="w-5 h-5" />, active: pathname === "/home" },
+    { label: "Schedule", href: "/calendar", icon: <Calendar className="w-5 h-5" />, active: pathname.startsWith("/calendar") },
     { label: "Wardrobe", href: "/wardrobe", icon: <Shirt className="w-5 h-5" />, active: pathname.startsWith("/wardrobe") },
     { label: "Outfits", href: "/outfits", icon: <Layers className="w-5 h-5" />, active: pathname.startsWith("/outfits") },
+    { label: "OP Assistant", href: "/assistant", icon: <Bot className="w-5 h-5" />, active: pathname === "/assistant" },
+    { label: "Reminders", href: "/reminders", icon: <Bell className="w-5 h-5" />, active: pathname === "/reminders" },
+    { label: "Finance & Goals", href: "/finance", icon: <Wallet className="w-5 h-5" />, active: pathname === "/finance" },
+    { label: "Marketplace", href: "/marketplace", icon: <ShoppingBag className="w-5 h-5" />, active: pathname.startsWith("/marketplace") },
     { label: "Profile", href: "/profile", icon: <User className="w-5 h-5" />, active: pathname === "/profile" },
     { label: "Settings", href: "/settings", icon: <Settings className="w-5 h-5" />, active: pathname === "/settings" },
   ];
 
-  const futureItems = [
-    { label: "Schedule", icon: <Calendar className="w-4 h-4" /> },
-    { label: "Self-Care", icon: <HeartPulse className="w-4 h-4" /> },
-    { label: "Finance", icon: <Wallet className="w-4 h-4" /> },
-  ];
-
   return (
     <aside
-      className="hidden md:flex flex-col justify-between w-64 lg:w-72 h-screen sticky top-0 border-r p-5 flex-shrink-0 z-30 transition-colors duration-200"
+      className="hidden md:flex flex-col justify-between w-64 lg:w-72 h-screen sticky top-0 border-r p-5 flex-shrink-0 z-30 transition-colors duration-200 overflow-y-auto"
       style={{
         backgroundColor: "var(--surface)",
         borderColor: "var(--border)",
@@ -72,7 +73,7 @@ export function Sidebar() {
         </Link>
 
         {/* Core Navigation */}
-        <nav className="space-y-1.5" aria-label="Main Navigation">
+        <nav className="space-y-1" aria-label="Main Navigation">
           <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] px-3 mb-2">
             Intelligence Core
           </p>
@@ -81,7 +82,7 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3.5 px-3.5 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 group relative",
+                "flex items-center gap-3 px-3 py-2 rounded-2xl text-xs sm:text-sm font-medium transition-all duration-200 group relative",
                 item.active
                   ? "bg-[var(--primary-soft)] text-[var(--primary)] font-semibold shadow-sm"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-soft)]"
@@ -95,52 +96,29 @@ export function Sidebar() {
               >
                 {item.icon}
               </span>
-              <span>{item.label}</span>
+              <span className="truncate">{item.label}</span>
               {item.active && (
                 <div className="absolute right-3 w-1.5 h-1.5 rounded-full bg-[var(--primary)]" />
               )}
             </Link>
           ))}
         </nav>
-
-        {/* Phase 2+ Extension Points */}
-        <div className="pt-2">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] px-3 mb-2">
-            Coming Next (Phase 2+)
-          </p>
-          <div className="space-y-1">
-            {futureItems.map((item) => (
-              <div
-                key={item.label}
-                className="flex items-center justify-between px-3.5 py-2 rounded-2xl text-xs text-[var(--text-muted)] opacity-60 cursor-not-allowed"
-              >
-                <div className="flex items-center gap-3">
-                  <span>{item.icon}</span>
-                  <span>{item.label}</span>
-                </div>
-                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-[var(--surface-soft)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
-                  Soon
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Bottom section: User Info & Controls */}
-      <div className="space-y-3 pt-4 border-t border-[var(--border-subtle)]">
+      <div className="space-y-3 pt-4 border-t border-[var(--border-subtle)] mt-4">
         {/* OP AI Status Pill */}
         <div className="p-3 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border-subtle)] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)] animate-pulse" />
             <div>
               <p className="text-xs font-semibold text-[var(--text-primary)]">OP AI Active</p>
-              <p className="text-[10px] text-[var(--text-muted)]">Context engine ready</p>
+              <p className="text-[10px] text-[var(--text-muted)]">Features 1–22 Connected</p>
             </div>
           </div>
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-xl text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors"
+            className="p-2 rounded-xl text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
             title={`Switch to ${resolvedTheme === "dark" ? "Light" : "Dark"} mode`}
             aria-label="Toggle theme"
           >
@@ -168,7 +146,7 @@ export function Sidebar() {
             </Link>
             <button
               onClick={() => signOut()}
-              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--surface-soft)] transition-colors ml-2"
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--surface-soft)] transition-colors ml-2 cursor-pointer"
               title="Sign Out"
               aria-label="Sign Out"
             >

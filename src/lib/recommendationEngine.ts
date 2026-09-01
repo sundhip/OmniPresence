@@ -5,6 +5,7 @@ import {
   RecommendationRequest,
   RecommendationResponse,
   RecommendationScoreBreakdown,
+  CarryItemRecommendation,
 } from "@/types/recommendation";
 import { WeatherContext } from "@/types/weather";
 import { generateId } from "./utils";
@@ -45,6 +46,13 @@ export class RecommendationEngine {
     const outerwear = availableItems.filter((i) => i.category === "Outerwear");
     const accessories = availableItems.filter((i) => i.category === "Accessories");
 
+    // Generate intelligent Carry / Accessory recommendations
+    const carryRecommendations = this.generateCarryRecommendations(
+      availableItems,
+      weather,
+      request.occasion
+    );
+
     const candidateCombinations: {
       items: WardrobeItem[];
       name: string;
@@ -52,7 +60,7 @@ export class RecommendationEngine {
       weatherNote?: string;
     }[] = [];
 
-    // Form 2-piece and 3/4-piece candidate sets (Top + Bottom + Shoes + optional Outerwear/Accessory)
+    // Form Top + Bottom + Shoes combinations
     if (tops.length > 0 && bottoms.length > 0 && shoes.length > 0) {
       for (const top of tops) {
         for (const bottom of bottoms) {
@@ -61,7 +69,7 @@ export class RecommendationEngine {
 
             // Outerwear logic influenced by temperature/weather
             const shouldAddOuterwear =
-              weather && (weather.temperature <= 21 || weather.condition === "Rainy");
+              weather && (weather.temperature <= 18 || weather.condition === "Rainy" || weather.condition === "Stormy");
 
             if (shouldAddOuterwear && outerwear.length > 0) {
               const matchingOuterwear =
@@ -70,19 +78,12 @@ export class RecommendationEngine {
                 ) || outerwear[0];
               if (matchingOuterwear) combo.push(matchingOuterwear);
             } else if (outerwear.length > 0 && Math.random() > 0.6) {
-              // Occasional light layer
               const matchingOuterwear = outerwear.find(
                 (o) =>
                   o.occasion.some((occ) => occ.toLowerCase().includes(targetOccasion)) ||
                   (top.color === "White" && o.color === "Black")
               );
               if (matchingOuterwear) combo.push(matchingOuterwear);
-            }
-
-            // Optionally add accessory (watch/belt)
-            const matchingAccessory = accessories.find((a) => a.favorite || a.wearCount > 5);
-            if (matchingAccessory && Math.random() > 0.4) {
-              combo.push(matchingAccessory);
             }
 
             candidateCombinations.push({
@@ -100,77 +101,96 @@ export class RecommendationEngine {
       for (const dress of dresses) {
         for (const shoe of shoes) {
           const combo: WardrobeItem[] = [dress, shoe];
-          if (outerwear.length > 0 && weather && weather.temperature <= 20) {
+          if (outerwear.length > 0 && weather && weather.temperature <= 19) {
             combo.push(outerwear[0]);
           }
-
           candidateCombinations.push({
             items: combo,
-            name: `${dress.name} Set`,
-            vibe: "Elegant & Streamlined",
+            name: `${dress.name.split(" ")[0]} Statement Look`,
+            vibe: this.inferVibe(combo, targetOccasion),
           });
         }
       }
     }
 
     // Fallback if wardrobe is small
-    if (candidateCombinations.length === 0) {
-      const allSelected = availableItems.slice(0, 4);
+    if (candidateCombinations.length === 0 && wardrobe.length > 0) {
+      const fallbackCombo = wardrobe.slice(0, 3);
       candidateCombinations.push({
-        items: allSelected,
-        name: "Personal Signature Blend",
-        vibe: "Essential Rotation",
+        items: fallbackCombo,
+        name: "Essential Signature Ensemble",
+        vibe: "Curated Minimalist",
       });
     }
 
     // Score all candidates
     const scoredCandidates: RecommendationCandidate[] = candidateCombinations.map((combo) => {
-      const breakdown = this.calculateBreakdown(combo.items, profile, request, weather);
+      const breakdown = this.calculateScores(combo.items, profile, request, weather);
       const rationale = this.generateRationale(combo.items, breakdown, request, profile, weather);
       const stylingTips = this.generateStylingTips(combo.items, request, weather);
 
-      let weatherNote: string | undefined = undefined;
+      let weatherReason: string | undefined = undefined;
       if (weather) {
-        if (weather.temperature >= 28) {
-          weatherNote = `Lightweight & breathable for ${weather.temperature}°C ${weather.condition}`;
+        if (carryRecommendations.length > 0) {
+          weatherReason = carryRecommendations.map((c) => c.reason).join(" ");
+        } else if (weather.temperature >= 28) {
+          weatherReason = `I selected lighter, breathable options for today's ${weather.temperature}°C temperature.`;
         } else if (weather.temperature <= 18) {
-          weatherNote = `Warm layered look for ${weather.temperature}°C cool conditions`;
-        } else if (weather.condition === "Rainy" || weather.precipitation.toLowerCase().includes("rain")) {
-          weatherNote = `Rain-friendly ensemble for wet conditions`;
-        } else {
-          weatherNote = `Comfortable for ${weather.temperature}°C ${weather.condition}`;
+          weatherReason = `I added warmth and protective layering for the ${weather.temperature}°C cool weather.`;
         }
       }
 
       return {
-        id: generateId("rec"),
+        id: generateId("cand"),
         name: combo.name,
         items: combo.items,
+        carryItems: carryRecommendations,
         score: breakdown.totalScore,
         breakdown,
         rationale,
         stylingTips,
         vibe: combo.vibe,
         occasionMatch: request.occasion,
-        weatherNote,
+        weatherNote: weather ? `${weather.temperature}°C • ${weather.condition}` : undefined,
+        weatherReason,
       };
     });
 
-    // Sort by total score descending
+    // Sort descending by total score
     scoredCandidates.sort((a, b) => b.score - a.score);
 
-    // Select primary and distinct alternatives
-    const primary = scoredCandidates[0];
-    const alternatives = scoredCandidates
-      .slice(1)
-      .filter((c) => c.items[0]?.id !== primary.items[0]?.id || c.items[1]?.id !== primary.items[1]?.id)
-      .slice(0, 2);
+    const primary = scoredCandidates[0] || {
+      id: generateId("cand"),
+      name: "Classic Minimalist Look",
+      items: wardrobe.slice(0, 3),
+      carryItems: carryRecommendations,
+      score: 85,
+      breakdown: {
+        occasionFit: 85,
+        preferenceMatch: 80,
+        weatherCompatibility: 85,
+        colorCompatibility: 85,
+        recentWearBalance: 80,
+        wardrobeAvailability: 90,
+        totalScore: 85,
+      },
+      rationale: ["Balanced everyday styling from your curated collection."],
+      stylingTips: ["Pair with minimalist accents for effortless wear."],
+      vibe: "Modern Minimalist",
+      occasionMatch: request.occasion,
+    };
 
-    let explanation = `OP AI curated this look specifically for your **${request.occasion}** occasion.`;
+    const alternatives = scoredCandidates.slice(1, 4);
+
+    let explanation = `Curated for **${request.occasion}** based on your style preferences and current rotation.`;
     if (weather) {
-      explanation += ` Factoring in today's **${weather.temperature}°C • ${weather.condition}** weather in ${weather.location}, the ensemble favors comfortable thermal balance alongside your aesthetic preferences (${profile.stylePreferences.slice(0, 2).join(", ")}).`;
-    } else {
-      explanation += ` It harmonizes your preferred style aesthetics (${profile.stylePreferences.slice(0, 2).join(", ")}) while maintaining optimal wardrobe rotation for items not worn recently.`;
+      if (carryRecommendations.some((c) => c.type === "umbrella")) {
+        explanation = `I chose a comfortable outfit for today and added an umbrella because rain is expected in your area.`;
+      } else if (weather.temperature >= 28) {
+        explanation = `I chose a lighter outfit for the warm ${weather.temperature}°C weather.`;
+      } else if (weather.temperature <= 18) {
+        explanation = `I layered for the cooler ${weather.temperature}°C weather today.`;
+      }
     }
 
     return {
@@ -183,7 +203,113 @@ export class RecommendationEngine {
     };
   }
 
-  private static calculateBreakdown(
+  /**
+   * Generate contextually justified carry and accessory recommendations
+   */
+  public static generateCarryRecommendations(
+    wardrobe: WardrobeItem[],
+    weather?: WeatherContext,
+    occasion?: string
+  ): CarryItemRecommendation[] {
+    const carry: CarryItemRecommendation[] = [];
+    if (!weather) return carry;
+
+    const accessories = wardrobe.filter((i) => i.category === "Accessories");
+    const isRainy =
+      weather.condition === "Rainy" ||
+      weather.condition === "Stormy" ||
+      (weather.precipitationProbability !== undefined
+        ? weather.precipitationProbability >= 40
+        : !weather.precipitation.toLowerCase().includes("no rain") &&
+          (weather.precipitation.toLowerCase().includes("rain") ||
+            weather.precipitation.toLowerCase().includes("shower") ||
+            weather.precipitation.toLowerCase().includes("drizzle")));
+
+    // 1. Umbrella Logic (Section 21 & 22)
+    // Only recommend if rain probability is meaningful (>= 40% or Rainy/Stormy)
+    if (isRainy) {
+      const wardrobeUmbrella = accessories.find((a) => a.name.toLowerCase().includes("umbrella"));
+      carry.push({
+        type: "umbrella",
+        name: wardrobeUmbrella ? wardrobeUmbrella.name : "Umbrella",
+        reason:
+          weather.precipitationProbability && weather.precipitationProbability >= 40
+            ? `Rain probability is ${weather.precipitationProbability}% today.`
+            : "Rain is expected in your area.",
+        icon: "☂",
+        fromWardrobe: Boolean(wardrobeUmbrella),
+        wardrobeItemId: wardrobeUmbrella?.id,
+        item: wardrobeUmbrella,
+      });
+    }
+
+    // 2. Sunglasses Logic (Section 23 & 24)
+    // Strong sunlight, UV index >= 6, or hot sunny day (>= 29°C & Sunny/Clear)
+    const isHighSun =
+      (weather.uvIndex && weather.uvIndex >= 6) ||
+      (weather.temperature >= 29 && (weather.condition === "Sunny" || weather.condition === "Clear"));
+
+    if (isHighSun && !isRainy) {
+      const wardrobeSunglasses = accessories.find(
+        (a) =>
+          a.name.toLowerCase().includes("sunglasses") ||
+          a.name.toLowerCase().includes("glasses") ||
+          a.subcategory.toLowerCase().includes("sunglasses")
+      );
+
+      carry.push({
+        type: "sunglasses",
+        name: wardrobeSunglasses ? wardrobeSunglasses.name : "Sunglasses",
+        reason:
+          weather.uvIndex && weather.uvIndex >= 6
+            ? `High UV Index (${weather.uvIndex}) and strong sunlight expected.`
+            : `Bright sunny conditions at ${weather.temperature}°C.`,
+        icon: "🕶️",
+        fromWardrobe: Boolean(wardrobeSunglasses),
+        wardrobeItemId: wardrobeSunglasses?.id,
+        item: wardrobeSunglasses,
+      });
+
+      // Cap logic: if user has a cap in wardrobe or hot outdoor context
+      const wardrobeCap = accessories.find(
+        (a) =>
+          a.name.toLowerCase().includes("cap") ||
+          a.name.toLowerCase().includes("hat") ||
+          a.subcategory.toLowerCase().includes("cap")
+      );
+      if (wardrobeCap) {
+        carry.push({
+          type: "cap",
+          name: wardrobeCap.name,
+          reason: "Sun protection for bright outdoor conditions.",
+          icon: "🧢",
+          fromWardrobe: true,
+          wardrobeItemId: wardrobeCap.id,
+          item: wardrobeCap,
+        });
+      }
+    }
+
+    // 3. Cool Weather Outer Layer / Scarf Carry
+    if (weather.temperature <= 16 && !isRainy) {
+      const scarf = accessories.find((a) => a.name.toLowerCase().includes("scarf"));
+      if (scarf) {
+        carry.push({
+          type: "scarf",
+          name: scarf.name,
+          reason: `Temperature drops to ${weather.temperature}°C.`,
+          icon: "🧣",
+          fromWardrobe: true,
+          wardrobeItemId: scarf.id,
+          item: scarf,
+        });
+      }
+    }
+
+    return carry;
+  }
+
+  private static calculateScores(
     items: WardrobeItem[],
     profile: UserProfile,
     request: RecommendationRequest,
@@ -196,7 +322,6 @@ export class RecommendationEngine {
     items.forEach((item) => {
       const match = item.occasion.some(
         (occ) =>
-          occ.toLowerCase().includes(targetOccasion) ||
           targetOccasion.includes(occ.toLowerCase()) ||
           occ.toLowerCase() === "everyday" ||
           occ.toLowerCase() === "casual"
@@ -212,10 +337,32 @@ export class RecommendationEngine {
     if (profile.fitPreference && profile.fitPreference !== "Not Specified") {
       userFits.push(profile.fitPreference.toLowerCase());
     }
+
+    // Factor in Skin Tone Undertone Color Harmony
+    const skinUndertone = profile.appearance?.skinTone?.undertone;
+    const warmHarmonies = ["beige", "olive", "brown", "cream", "mustard", "tan", "red", "orange", "earth tones"];
+    const coolHarmonies = ["navy", "white", "black", "grey", "blue", "burgundy", "charcoal", "emerald"];
+
     items.forEach((item) => {
-      if (userColors.includes(item.color.toLowerCase())) prefScore += 8;
+      const itemColor = item.color.toLowerCase();
+      if (userColors.includes(itemColor)) prefScore += 8;
       if (item.fit && userFits.includes(item.fit.toLowerCase())) prefScore += 6;
       if (item.favorite) prefScore += 6;
+
+      // Skin Tone Harmony Bonus
+      if (skinUndertone === "Warm" && warmHarmonies.includes(itemColor)) {
+        prefScore += 4;
+      } else if (skinUndertone === "Cool" && coolHarmonies.includes(itemColor)) {
+        prefScore += 4;
+      }
+
+      // Outfit Priorities Alignment
+      if (profile.outfitPriorities?.includes("Comfort") && (item.fit === "Relaxed" || item.fit === "Regular")) {
+        prefScore += 3;
+      }
+      if (profile.outfitPriorities?.includes("Professional Appearance") && (item.category === "Outerwear" || item.subcategory?.toLowerCase().includes("shirt"))) {
+        prefScore += 3;
+      }
     });
     const preferenceMatch = Math.min(100, prefScore);
 
@@ -226,14 +373,18 @@ export class RecommendationEngine {
       const isRainy =
         weather.condition === "Rainy" ||
         weather.condition === "Stormy" ||
-        weather.precipitation.toLowerCase().includes("rain");
+        (weather.precipitationProbability !== undefined
+          ? weather.precipitationProbability >= 40
+          : !weather.precipitation.toLowerCase().includes("no rain") &&
+            (weather.precipitation.toLowerCase().includes("rain") ||
+              weather.precipitation.toLowerCase().includes("shower") ||
+              weather.precipitation.toLowerCase().includes("drizzle")));
 
       items.forEach((item) => {
         const cat = item.category;
         const sub = item.subcategory.toLowerCase();
-        const mat = (item.material || "").toLowerCase();
 
-        // Warm / Hot Weather (>= 28°C)
+        // Hot Weather (>= 28°C)
         if (temp >= 28) {
           if (cat === "Outerwear" && (sub.includes("wool") || sub.includes("coat") || sub.includes("heavy"))) {
             weatherScore -= 25; // Too hot for heavy coats
@@ -241,17 +392,17 @@ export class RecommendationEngine {
           if (sub.includes("sweater") || sub.includes("turtleneck")) {
             weatherScore -= 15;
           }
-          if (sub.includes("t-shirt") || sub.includes("tee") || sub.includes("linen") || cat === "Dresses") {
-            weatherScore += 10; // Breathable
+          if (sub.includes("t-shirt") || sub.includes("tee") || sub.includes("shirt") || cat === "Dresses") {
+            weatherScore += 10;
           }
-          if (["white", "beige", "cream", "blue"].includes(item.color.toLowerCase())) {
-            weatherScore += 5; // Light reflective tones
+          if (["white", "beige", "cream", "blue", "red"].includes(item.color.toLowerCase())) {
+            weatherScore += 5;
           }
         }
-        // Mild / Cool Weather (<= 18°C)
+        // Cool Weather (<= 18°C)
         else if (temp <= 18) {
           if (cat === "Outerwear" || sub.includes("jacket") || sub.includes("blazer") || sub.includes("coat")) {
-            weatherScore += 15; // Protective layer
+            weatherScore += 15;
           }
           if (sub.includes("sweater") || sub.includes("knit") || sub.includes("trousers")) {
             weatherScore += 10;
@@ -261,7 +412,7 @@ export class RecommendationEngine {
         // Rainy conditions
         if (isRainy) {
           if (sub.includes("suede") || sub.includes("canvas")) {
-            weatherScore -= 15; // Avoid delicate suede/canvas in rain
+            weatherScore -= 15;
           }
           if (sub.includes("boot") || sub.includes("leather") || cat === "Outerwear") {
             weatherScore += 10;
@@ -277,9 +428,9 @@ export class RecommendationEngine {
       const color1 = items[0].color.toLowerCase();
       const color2 = items[1].color.toLowerCase();
       if (color1 === color2) {
-        colorScore += 15; // Monochrome harmony
+        colorScore += 15;
       } else if (COLOR_HARMONIES[color1]?.includes(color2)) {
-        colorScore += 25; // Complementary pairing
+        colorScore += 25;
       }
     }
     const colorCompatibility = Math.min(100, colorScore);
@@ -290,10 +441,10 @@ export class RecommendationEngine {
     items.forEach((item) => {
       if (item.lastWorn) {
         const diffDays = Math.floor((now - new Date(item.lastWorn).getTime()) / (1000 * 3600 * 24));
-        if (diffDays === 0) wearScore -= 20; // worn today
-        else if (diffDays >= 7) wearScore += 10; // good rotation
+        if (diffDays === 0) wearScore -= 20;
+        else if (diffDays >= 7) wearScore += 10;
       } else {
-        wearScore += 15; // fresh unworn piece
+        wearScore += 15;
       }
     });
     const recentWearBalance = Math.min(100, Math.max(30, wearScore));
@@ -339,11 +490,11 @@ export class RecommendationEngine {
       if (weather.temperature >= 28) {
         if (profile.fitPreference === "Oversized") {
           reasons.push(
-            `You prefer oversized fits, so I kept that preference while selecting your lightest, most breathable pieces for today's **${weather.temperature}°C** weather.`
+            `You prefer oversized fits, so I kept that preference while selecting your lighter, breathable pieces for today's **${weather.temperature}°C** weather.`
           );
         } else {
           reasons.push(
-            `Comfortably balanced for today's **${weather.temperature}°C • ${weather.condition}** weather with lightweight, breathable pieces.`
+            `Comfortably balanced for today's **${weather.temperature}°C • ${weather.condition}** weather with breathable pieces.`
           );
         }
       } else if (weather.temperature <= 18) {
@@ -352,11 +503,11 @@ export class RecommendationEngine {
         );
       } else if (weather.condition === "Rainy" || weather.precipitation.toLowerCase().includes("rain")) {
         reasons.push(
-          `Rain-conscious selection avoiding delicate materials and ensuring weather protection.`
+          `Rain-conscious selection ensuring comfort and weather protection.`
         );
       } else {
         reasons.push(
-          `Optimal fabric weight calibrated for today's **${weather.temperature}°C** temperature.`
+          `Fabric weight calibrated for today's **${weather.temperature}°C** temperature.`
         );
       }
     }

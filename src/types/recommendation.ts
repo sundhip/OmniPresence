@@ -22,10 +22,21 @@ export interface RecommendationScoreBreakdown {
   totalScore: number; // 0-100 weighted
 }
 
+export interface CarryItemRecommendation {
+  type: "umbrella" | "sunglasses" | "cap" | "jacket" | "scarf" | "water_bottle" | "accessory";
+  name: string;
+  reason: string;
+  icon?: string;
+  fromWardrobe?: boolean;
+  wardrobeItemId?: string;
+  item?: WardrobeItem;
+}
+
 export interface RecommendationCandidate {
   id: string;
   name: string;
   items: WardrobeItem[];
+  carryItems?: CarryItemRecommendation[];
   score: number;
   breakdown: RecommendationScoreBreakdown;
   rationale: string[];
@@ -33,6 +44,7 @@ export interface RecommendationCandidate {
   vibe: string;
   occasionMatch: string;
   weatherNote?: string;
+  weatherReason?: string;
 }
 
 export interface RecommendationResponse {

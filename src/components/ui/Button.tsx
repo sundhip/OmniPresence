@@ -28,7 +28,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-medium transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none disabled:active:scale-100 cursor-pointer select-none";
+      "inline-flex items-center justify-center font-medium transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none disabled:active:scale-100 cursor-pointer select-none whitespace-nowrap flex-nowrap shrink-0";
 
     const variantStyles = {
       primary:
@@ -46,9 +46,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     };
 
     const sizeStyles = {
-      sm: "h-8 px-3 text-xs rounded-full gap-1.5",
-      md: "h-10 px-4 text-sm rounded-full gap-2",
-      lg: "h-12 px-6 text-base rounded-full gap-2.5",
+      sm: "h-9 px-3.5 text-xs rounded-full gap-1.5 min-h-[36px]",
+      md: "h-11 px-5 text-sm rounded-full gap-2 min-h-[44px]",
+      lg: "h-12 px-7 text-base rounded-full gap-2.5 min-h-[48px]",
       icon: "h-10 w-10 p-0 rounded-full",
     };
 
@@ -60,12 +60,18 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {isLoading ? (
-          <Loader2 className="w-4 h-4 animate-spin text-current" />
+          <Loader2 className="w-4 h-4 animate-spin text-current shrink-0" />
         ) : (
-          leftIcon && <span className="flex-shrink-0">{leftIcon}</span>
+          leftIcon && <span className="flex-shrink-0 inline-flex items-center">{leftIcon}</span>
         )}
-        {children && <span>{children}</span>}
-        {!isLoading && rightIcon && <span className="flex-shrink-0">{rightIcon}</span>}
+        {children && (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap flex-nowrap">
+            {children}
+          </span>
+        )}
+        {!isLoading && rightIcon && (
+          <span className="flex-shrink-0 inline-flex items-center">{rightIcon}</span>
+        )}
       </button>
     );
   }

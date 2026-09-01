@@ -12,6 +12,8 @@ import {
   Layers,
   CloudSun,
   Lightbulb,
+  Briefcase,
+  ShieldAlert,
 } from "lucide-react";
 import { getColorHex } from "@/lib/utils";
 
@@ -30,7 +32,7 @@ export function RecommendationCard({
   onUseOutfit,
   onRegenerate,
 }: RecommendationCardProps) {
-  const { breakdown } = candidate;
+  const { breakdown, carryItems } = candidate;
 
   return (
     <div
@@ -55,7 +57,7 @@ export function RecommendationCard({
                 {candidate.occasionMatch}
               </Badge>
               {(weather || candidate.weatherNote) && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--surface-soft)] text-[var(--text-secondary)] text-[10px] font-semibold border border-[var(--border-subtle)]">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[var(--surface-soft)] text-[var(--text-secondary)] text-[10px] font-semibold border border-[var(--border-subtle)]">
                   <CloudSun className="w-3 h-3 text-[#38BDF8]" />
                   <span>
                     {weather
@@ -87,40 +89,82 @@ export function RecommendationCard({
         </div>
       </div>
 
-      {/* Wardrobe Items Visual Display */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 my-5">
-        {candidate.items.map((item) => (
-          <div
-            key={item.id}
-            className="group relative rounded-2xl p-2.5 bg-[var(--surface-soft)] border border-[var(--border)] overflow-hidden flex flex-col justify-between"
-          >
-            <div className="relative aspect-square rounded-xl overflow-hidden bg-[var(--surface)] mb-2 shadow-xs">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={item.imageUrl}
-                alt={item.name}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              />
-              <span
-                className="absolute top-2 left-2 w-3 h-3 rounded-full border border-white shadow-xs"
-                style={{ backgroundColor: getColorHex(item.color) }}
-                title={`Color: ${item.color}`}
-              />
-              <span className="absolute bottom-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-black/70 text-white">
-                {item.category}
-              </span>
+      {/* WEAR Section */}
+      <div className="my-5">
+        <div className="flex items-center justify-between mb-2.5">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+            <span>WEAR ({candidate.items.length} PIECES)</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+          {candidate.items.map((item) => (
+            <div
+              key={item.id}
+              className="group relative rounded-2xl p-2.5 bg-[var(--surface-soft)] border border-[var(--border)] overflow-hidden flex flex-col justify-between"
+            >
+              <div className="relative aspect-square rounded-xl overflow-hidden bg-[var(--surface)] mb-2 shadow-xs">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={item.imageUrl}
+                  alt={item.name}
+                  className="w-full h-full object-contain p-1 group-hover:scale-105 transition-transform duration-300"
+                />
+                <span
+                  className="absolute top-2 left-2 w-3 h-3 rounded-full border border-white shadow-xs"
+                  style={{ backgroundColor: getColorHex(item.color) }}
+                  title={`Color: ${item.color}`}
+                />
+                <span className="absolute bottom-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-black/70 text-white">
+                  {item.category}
+                </span>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-[var(--text-primary)] truncate">
+                  {item.name}
+                </p>
+                <p className="text-[10px] text-[var(--text-muted)] truncate">
+                  {item.brand || item.subcategory} • {item.wearCount} wears
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold text-[var(--text-primary)] truncate">
-                {item.name}
-              </p>
-              <p className="text-[10px] text-[var(--text-muted)] truncate">
-                {item.brand || item.subcategory} • {item.wearCount} wears
-              </p>
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
+
+      {/* TAKE WITH YOU (Carry / Accessory recommendations) */}
+      {carryItems && carryItems.length > 0 && (
+        <div className="p-3.5 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border)] mb-5">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Briefcase className="w-3.5 h-3.5 text-[var(--primary)]" />
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-primary)]">
+              TAKE WITH YOU
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2.5">
+            {carryItems.map((carry, idx) => (
+              <div
+                key={idx}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] text-xs shadow-2xs"
+              >
+                <span className="text-base">{carry.icon || "🎒"}</span>
+                <div>
+                  <p className="font-bold text-[var(--text-primary)] flex items-center gap-1">
+                    <span>{carry.name}</span>
+                    {carry.fromWardrobe && (
+                      <span className="text-[9px] px-1 py-0.2 rounded bg-[var(--primary-soft)] text-[var(--primary)] font-bold">
+                        In Wardrobe
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-[10px] text-[var(--text-muted)]">{carry.reason}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Why This Works (Explainability) & Multi-Factor Intelligence Breakdown */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border-subtle)] mb-5">

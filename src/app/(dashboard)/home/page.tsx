@@ -3,14 +3,21 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { WardrobeItem, WearEvent } from "@/types/wardrobe";
+import { WardrobeItem } from "@/types/wardrobe";
 import { PopulatedOutfit } from "@/types/outfit";
 import { RecommendationResponse } from "@/types/recommendation";
 import { WeatherContext } from "@/types/weather";
+import { EventItem } from "@/types/events";
+import { FinancialPlan } from "@/types/finance";
 import { wardrobeService } from "@/services/wardrobeService";
 import { outfitService } from "@/services/outfitService";
 import { recommendationService } from "@/services/recommendationService";
 import { weatherService } from "@/services/weatherService";
+import { calendarService } from "@/services/calendarService";
+import { financeService } from "@/services/financeService";
+import { remindersService } from "@/services/remindersService";
+import { TransportationEngine } from "@/lib/transportationEngine";
+import { ReadinessEngine } from "@/lib/readinessEngine";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -27,6 +34,12 @@ import {
   TrendingUp,
   Heart,
   Calendar,
+  Train,
+  CheckCircle2,
+  AlertTriangle,
+  MapPin,
+  Bot,
+  Zap,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { useRouter } from "next/navigation";
@@ -37,6 +50,8 @@ export default function HomePage() {
 
   const [wardrobe, setWardrobe] = useState<WardrobeItem[]>([]);
   const [outfits, setOutfits] = useState<PopulatedOutfit[]>([]);
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [financialPlan, setFinancialPlan] = useState<FinancialPlan | null>(null);
   const [weather, setWeather] = useState<WeatherContext | null>(null);
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -44,19 +59,25 @@ export default function HomePage() {
 
   const loadDashboardData = async () => {
     try {
-      const items = await wardrobeService.getItems();
-      const populatedOutfits = await outfitService.getAllPopulatedOutfits();
-      const weatherData = await weatherService.getWeatherContext();
+      const [items, populatedOutfits, weatherData, evList, fPlan] = await Promise.all([
+        wardrobeService.getItems(),
+        outfitService.getAllPopulatedOutfits(),
+        weatherService.getWeatherContext().catch(() => null),
+        calendarService.getEvents().catch(() => []),
+        financeService.getFinancialPlan().catch(() => null),
+      ]);
 
       setWardrobe(items);
       setOutfits(populatedOutfits);
       setWeather(weatherData);
+      setEvents(evList);
+      setFinancialPlan(fPlan);
 
       // Load weather-aware recommendation
       if (items.length > 0) {
         const rec = await recommendationService.getOutfitRecommendation({
           occasion: "Office Meeting",
-          weather: weatherData,
+          weather: weatherData || undefined,
         });
         setRecommendation(rec);
       }
@@ -86,7 +107,7 @@ export default function HomePage() {
     }
   };
 
-  // Derived dynamic metrics
+  // Derived dynamic metrics & suggestions (Feature 17)
   const totalItems = wardrobe.length;
   const mostWornItem = [...wardrobe].sort((a, b) => b.wearCount - a.wearCount)[0];
   const recentlyAdded = [...wardrobe].sort(
@@ -94,6 +115,9 @@ export default function HomePage() {
   )[0];
   const upcomingOutfit = outfits.find((o) => o.date) || outfits[0];
   const favoriteItems = wardrobe.filter((i) => i.favorite);
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const todayEvent = events.find((e) => e.date === todayStr) || events.sort((a, b) => a.date.localeCompare(b.date))[0];
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -103,7 +127,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-8 animate-fade-in pb-16">
       {/* Top Banner: Greeting, Weather Badge & OP AI Actions */}
       <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-[var(--surface-elevated)] via-[var(--surface)] to-[var(--surface-soft)] border border-[var(--border)] shadow-[var(--shadow-card)] relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="space-y-2 max-w-2xl">
@@ -145,17 +169,116 @@ export default function HomePage() {
           >
             Add Clothing
           </Button>
-          <Link href="/outfits/new">
+          <Link href="/assistant">
             <Button
               variant="primary"
               size="md"
-              leftIcon={<Sparkles className="w-4 h-4 text-white animate-pulse" />}
+              leftIcon={<Bot className="w-4 h-4 text-white" />}
             >
               Ask OP AI
             </Button>
           </Link>
         </div>
       </div>
+
+      {/* FEATURE 17: OP AI HOME SUGGESTIONS SPOTLIGHT */}
+      {todayEvent && (() => {
+        const transit = TransportationEngine.calculateTransitOptions(
+          todayEvent.originLocation || "Tambaram",
+          todayEvent.location || "Venue",
+          todayEvent.time || "10:00",
+          20
+        );
+        const readiness = ReadinessEngine.calculateEventReadiness(todayEvent, wardrobe);
+
+        return (
+          <div className="p-6 sm:p-7 rounded-3xl bg-[var(--surface)] border border-[var(--primary)]/30 shadow-[var(--shadow-card)] space-y-4 relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[var(--primary-soft)] text-[var(--primary)] flex items-center justify-center">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-bold text-[var(--text-primary)]">
+                    OP AI Daily Intelligence &amp; Schedule Spotlight
+                  </h2>
+                  <span className="text-[11px] text-[var(--text-muted)]">
+                    Personalized context for your schedule today
+                  </span>
+                </div>
+              </div>
+
+              <span
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${
+                  readiness.status === "READY"
+                    ? "bg-green-500/10 text-green-500 border border-green-500/20"
+                    : readiness.status === "ALMOST READY"
+                    ? "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                    : "bg-rose-500/10 text-rose-500 border border-rose-500/20"
+                }`}
+              >
+                {readiness.status === "READY" ? (
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                ) : (
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                )}
+                Readiness: {readiness.score}% ({readiness.status})
+              </span>
+            </div>
+
+            {/* Smart Contextual Breakdown */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
+              {/* Event & Time */}
+              <div className="p-4 rounded-2xl bg-[var(--surface-soft)] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-[var(--primary)]" /> Scheduled Event
+                </span>
+                <p className="font-bold text-sm text-[var(--text-primary)]">
+                  {todayEvent.title}
+                </p>
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  {todayEvent.time} at {todayEvent.location}
+                </p>
+              </div>
+
+              {/* Outfit Recommendation */}
+              <div className="p-4 rounded-2xl bg-[var(--surface-soft)] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1">
+                  <Shirt className="w-3 h-3 text-[var(--primary)]" /> Recommended Outfit
+                </span>
+                <p className="font-bold text-sm text-[var(--text-primary)] truncate">
+                  {todayEvent.plannedOutfit?.topItemName || "Navy Formal / Oxford Shirt"}
+                </p>
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  Calibrated for {weather?.temperature || 28}°C {weather?.condition || "warm"} weather
+                </p>
+              </div>
+
+              {/* Transit & Departure */}
+              <div className="p-4 rounded-2xl bg-[var(--surface-soft)] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1">
+                  <Train className="w-3 h-3 text-emerald-500" /> Fastest Transit &amp; Departure
+                </span>
+                <p className="font-bold text-sm text-[var(--text-primary)]">
+                  {transit.recommendedOption.name} ({transit.recommendedOption.durationMinutes}m)
+                </p>
+                <p className="text-[11px] text-emerald-600 font-bold">
+                  Leave by {transit.recommendedDepartureTime}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <Link
+                href={`/calendar/${todayEvent.id}`}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--primary)] hover:underline"
+              >
+                View full preparation checklist &amp; transit routes <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Dynamic Key Metrics Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -181,7 +304,29 @@ export default function HomePage() {
           </Card>
         </Link>
 
-        {/* Metric 2: Most Worn Piece */}
+        {/* Metric 2: Schedule & Events */}
+        <Link href="/calendar" className="block">
+          <Card variant="interactive" className="p-5 flex flex-col justify-between h-full">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                Schedule &amp; Events
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center">
+                <Calendar className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3 min-w-0">
+              <p className="text-2xl sm:text-3xl font-black text-[var(--text-primary)]">
+                {events.length}
+              </p>
+              <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                {events.length} active schedule items
+              </p>
+            </div>
+          </Card>
+        </Link>
+
+        {/* Metric 3: Most Worn Piece */}
         <Card className="p-5 flex flex-col justify-between h-full">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
@@ -201,43 +346,23 @@ export default function HomePage() {
           </div>
         </Card>
 
-        {/* Metric 3: Recently Added */}
-        <Card className="p-5 flex flex-col justify-between h-full">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-              Recently Added
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-[#E8B9E1]/30 text-[#831843] dark:text-[#E38CD4] flex items-center justify-center">
-              <Plus className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 min-w-0">
-            <p className="text-sm font-extrabold text-[var(--text-primary)] truncate">
-              {recentlyAdded ? recentlyAdded.name : "None yet"}
-            </p>
-            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              {recentlyAdded ? recentlyAdded.category : "Add your first piece"}
-            </p>
-          </div>
-        </Card>
-
-        {/* Metric 4: Active Planned Outfits */}
-        <Link href="/outfits" className="block">
+        {/* Metric 4: Financial Budget */}
+        <Link href="/finance" className="block">
           <Card variant="interactive" className="p-5 flex flex-col justify-between h-full">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                Planned Outfits
+                Remaining Budget
               </span>
-              <div className="w-8 h-8 rounded-xl bg-[#B8E9EE]/30 text-[#0891B2] dark:text-[#72DDE3] flex items-center justify-center">
-                <Layers className="w-4 h-4" />
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4" />
               </div>
             </div>
             <div className="mt-3">
-              <p className="text-2xl sm:text-3xl font-black text-[var(--text-primary)]">
-                {outfits.length}
+              <p className="text-2xl sm:text-3xl font-black text-emerald-500">
+                ₹{Math.max(0, (financialPlan?.monthlyFashionBudget || 5000) - (financialPlan?.spentThisMonth || 3800)).toLocaleString()}
               </p>
               <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                Ready for schedule execution
+                Of ₹{(financialPlan?.monthlyFashionBudget || 5000).toLocaleString()} monthly budget
               </p>
             </div>
           </Card>

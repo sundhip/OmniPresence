@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { WardrobeCategory, WardrobeItem } from "@/types/wardrobe";
 import { Outfit, PopulatedOutfit } from "@/types/outfit";
 import { WeatherContext } from "@/types/weather";
+import { CarryItemRecommendation } from "@/types/recommendation";
 import { OutfitItemSelectorModal } from "./OutfitItemSelectorModal";
 import { OPAIPanel } from "@/components/ai/OPAIPanel";
 import { WeatherCard } from "@/components/weather/WeatherCard";
@@ -20,6 +21,7 @@ import {
   X,
   Save,
   CloudSun,
+  Briefcase,
   CheckCircle2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -69,6 +71,7 @@ export function OutfitPlanner({ initialOutfit, onSaved }: OutfitPlannerProps) {
   const [selectedItems, setSelectedItems] = useState<WardrobeItem[]>(
     initialOutfit?.items || []
   );
+  const [carryItems, setCarryItems] = useState<CarryItemRecommendation[]>([]);
   const [weather, setWeather] = useState<WeatherContext | null>(null);
 
   // Selector Modal
@@ -98,10 +101,17 @@ export function OutfitPlanner({ initialOutfit, onSaved }: OutfitPlannerProps) {
     setSelectedItems(selectedItems.filter((i) => i.id !== itemId));
   };
 
+  const handleRemoveCarryItem = (idx: number) => {
+    setCarryItems(carryItems.filter((_, i) => i !== idx));
+  };
+
   const handleApplyAiOutfit = (candidate: any) => {
     setSelectedItems(candidate.items);
     setName(candidate.name);
     setOccasion(candidate.occasionMatch || occasion);
+    if (candidate.carryItems) {
+      setCarryItems(candidate.carryItems);
+    }
     setActiveTab("planner");
     success("AI Ensemble Applied", `Loaded ${candidate.items.length} pieces into your planner canvas.`);
   };
@@ -143,6 +153,12 @@ export function OutfitPlanner({ initialOutfit, onSaved }: OutfitPlannerProps) {
 
     setIsSubmitting(true);
     try {
+      const carryNote =
+        carryItems.length > 0
+          ? `\nTake: ${carryItems.map((c) => `${c.icon || "🎒"} ${c.name}`).join(", ")}`
+          : "";
+      const finalNotes = (notes.trim() + carryNote).trim() || undefined;
+
       if (initialOutfit) {
         const updated = await outfitService.updateOutfit(
           initialOutfit.id,
@@ -150,7 +166,7 @@ export function OutfitPlanner({ initialOutfit, onSaved }: OutfitPlannerProps) {
             name: name.trim(),
             occasion,
             date: date || null,
-            notes: notes.trim() || undefined,
+            notes: finalNotes,
             items: selectedItems.map((i) => i.id),
           },
           user?.id
@@ -165,7 +181,7 @@ export function OutfitPlanner({ initialOutfit, onSaved }: OutfitPlannerProps) {
             name: name.trim(),
             occasion,
             date: date || null,
-            notes: notes.trim() || undefined,
+            notes: finalNotes,
             items: selectedItems.map((i) => i.id),
             wearCount: 0,
             favorite: false,
@@ -300,7 +316,7 @@ export function OutfitPlanner({ initialOutfit, onSaved }: OutfitPlannerProps) {
                             <img
                               src={itemInSlot.imageUrl}
                               alt={itemInSlot.name}
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-contain p-1"
                             />
                           </div>
                           <div className="min-w-0 flex-1">
@@ -336,6 +352,38 @@ export function OutfitPlanner({ initialOutfit, onSaved }: OutfitPlannerProps) {
                   );
                 })}
               </div>
+
+              {/* Carry Items (What to Take) Canvas Section */}
+              {carryItems.length > 0 && (
+                <div className="p-4 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border)] space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-primary)] flex items-center gap-1.5">
+                      <Briefcase className="w-3.5 h-3.5 text-[var(--primary)]" />
+                      Take With You ({carryItems.length})
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {carryItems.map((carry, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] text-xs shadow-2xs"
+                      >
+                        <span>{carry.icon || "🎒"}</span>
+                        <span className="font-bold text-[var(--text-primary)]">{carry.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCarryItem(idx)}
+                          className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--error)] cursor-pointer"
+                          title="Remove item"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -392,7 +440,7 @@ export function OutfitPlanner({ initialOutfit, onSaved }: OutfitPlannerProps) {
                   type="submit"
                   variant="primary"
                   size="lg"
-                  className="w-full"
+                  className="w-full justify-center"
                   isLoading={isSubmitting}
                   leftIcon={<Save className="w-4 h-4" />}
                 >

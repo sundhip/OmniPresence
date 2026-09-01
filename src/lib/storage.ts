@@ -1,11 +1,17 @@
 import { WardrobeItem, WearEvent } from "@/types/wardrobe";
 import { Outfit } from "@/types/outfit";
 import { UserProfile } from "@/types/user";
+import { EventItem } from "@/types/events";
+import { ReminderItem } from "@/types/reminders";
+import { FinancialPlan } from "@/types/finance";
 import {
   INITIAL_USER,
   INITIAL_WARDROBE_ITEMS,
   INITIAL_WEAR_EVENTS,
   INITIAL_OUTFITS,
+  INITIAL_EVENTS,
+  INITIAL_REMINDERS,
+  INITIAL_FINANCIAL_PLAN,
 } from "./seedData";
 
 export const DEMO_USER_ID = "user_alex_mercer";
@@ -14,17 +20,19 @@ const STORAGE_KEYS = {
   ACTIVE_USER_ID: "op_active_user_id",
   REGISTERED_USERS: "op_registered_users",
   THEME: "op_theme_mode",
-  DEMO_INITIALIZED: "op_demo_initialized_v2",
+  DEMO_INITIALIZED: "op_demo_initialized_v3",
 };
 
 // Custom event to sync changes across components
 export const DATA_CHANGE_EVENT = "op_data_change";
 
 export function notifyDataChange(entity: string, userId?: string) {
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(
-      new CustomEvent(DATA_CHANGE_EVENT, { detail: { entity, userId } })
-    );
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+    try {
+      window.dispatchEvent(
+        new CustomEvent(DATA_CHANGE_EVENT, { detail: { entity, userId } })
+      );
+    } catch {}
   }
 }
 
@@ -91,6 +99,9 @@ export class AppStorage {
         this.saveWardrobe(DEMO_USER_ID, INITIAL_WARDROBE_ITEMS);
         this.saveWearEvents(DEMO_USER_ID, INITIAL_WEAR_EVENTS);
         this.saveOutfits(DEMO_USER_ID, INITIAL_OUTFITS);
+        this.saveEvents(DEMO_USER_ID, INITIAL_EVENTS);
+        this.saveReminders(DEMO_USER_ID, INITIAL_REMINDERS);
+        this.saveFinancialPlan(DEMO_USER_ID, INITIAL_FINANCIAL_PLAN);
 
         // Ensure demo user is in registered users
         const registered = this.getRegisteredUsers();
@@ -113,7 +124,6 @@ export class AppStorage {
       const data = localStorage.getItem(`op_user_${userId}`);
       if (data) return JSON.parse(data);
 
-      // If demo user and not loaded yet, initialize
       if (userId === DEMO_USER_ID) {
         return INITIAL_USER;
       }
@@ -128,7 +138,6 @@ export class AppStorage {
     try {
       localStorage.setItem(`op_user_${userId}`, JSON.stringify(user));
 
-      // Update in registered users registry
       const registered = this.getRegisteredUsers();
       const idx = registered.findIndex((u) => u.id === userId || u.email === user.email);
       if (idx >= 0) {
@@ -151,7 +160,6 @@ export class AppStorage {
       const data = localStorage.getItem(`op_wardrobe_${userId}`);
       if (data) return JSON.parse(data);
 
-      // Fallback for demo user
       if (userId === DEMO_USER_ID) {
         return INITIAL_WARDROBE_ITEMS;
       }
@@ -223,6 +231,169 @@ export class AppStorage {
     }
   }
 
+  // -------------------------------------------------------------
+  // Events / Calendar (strictly keyed by userId)
+  // -------------------------------------------------------------
+  public static getEvents(userId: string): EventItem[] {
+    if (!this.isClient() || !userId) return [];
+    try {
+      const data = localStorage.getItem(`op_events_${userId}`);
+      if (data) return JSON.parse(data);
+
+      if (userId === DEMO_USER_ID) {
+        return INITIAL_EVENTS;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  public static saveEvents(userId: string, events: EventItem[]): void {
+    if (!this.isClient() || !userId) return;
+    try {
+      localStorage.setItem(`op_events_${userId}`, JSON.stringify(events));
+      notifyDataChange("events", userId);
+    } catch (e) {
+      console.error("Failed to save events:", e);
+    }
+  }
+
+  public static getEvent(userId: string, eventId: string): EventItem | null {
+    const events = this.getEvents(userId);
+    return events.find((e) => e.id === eventId) || null;
+  }
+
+  public static saveEvent(userId: string, event: EventItem): void {
+    const events = this.getEvents(userId);
+    const idx = events.findIndex((e) => e.id === event.id);
+    if (idx >= 0) {
+      events[idx] = { ...event, updatedAt: new Date().toISOString() };
+    } else {
+      events.push({
+        ...event,
+        createdAt: event.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    this.saveEvents(userId, events);
+  }
+
+  public static deleteEvent(userId: string, eventId: string): void {
+    const events = this.getEvents(userId);
+    const filtered = events.filter((e) => e.id !== eventId);
+    this.saveEvents(userId, filtered);
+
+    // Also delete associated reminders
+    const reminders = this.getReminders(userId);
+    const filteredReminders = reminders.filter((r) => r.eventId !== eventId);
+    this.saveReminders(userId, filteredReminders);
+  }
+
+  // -------------------------------------------------------------
+  // Reminders (strictly keyed by userId)
+  // -------------------------------------------------------------
+  public static getReminders(userId: string): ReminderItem[] {
+    if (!this.isClient() || !userId) return [];
+    try {
+      const data = localStorage.getItem(`op_reminders_${userId}`);
+      if (data) return JSON.parse(data);
+
+      if (userId === DEMO_USER_ID) {
+        return INITIAL_REMINDERS;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  public static saveReminders(userId: string, reminders: ReminderItem[]): void {
+    if (!this.isClient() || !userId) return;
+    try {
+      localStorage.setItem(`op_reminders_${userId}`, JSON.stringify(reminders));
+      notifyDataChange("reminders", userId);
+    } catch (e) {
+      console.error("Failed to save reminders:", e);
+    }
+  }
+
+  public static saveReminder(userId: string, reminder: ReminderItem): void {
+    const reminders = this.getReminders(userId);
+    const idx = reminders.findIndex((r) => r.id === reminder.id);
+    if (idx >= 0) {
+      reminders[idx] = { ...reminder, updatedAt: new Date().toISOString() };
+    } else {
+      reminders.push({
+        ...reminder,
+        createdAt: reminder.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    this.saveReminders(userId, reminders);
+  }
+
+  public static deleteReminder(userId: string, reminderId: string): void {
+    const reminders = this.getReminders(userId);
+    const filtered = reminders.filter((r) => r.id !== reminderId);
+    this.saveReminders(userId, filtered);
+  }
+
+  // -------------------------------------------------------------
+  // Financial Plan & Goals (strictly keyed by userId)
+  // -------------------------------------------------------------
+  public static getFinancialPlan(userId: string): FinancialPlan {
+    const defaultPlan: FinancialPlan = {
+      userId,
+      monthlyBudget: 0,
+      monthlyFashionBudget: 0,
+      clothingBudget: 0,
+      shoppingLimit: 0,
+      savingsGoal: 0,
+      spentThisMonth: 0,
+      currency: "₹",
+      transactions: [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (!this.isClient() || !userId) return defaultPlan;
+    try {
+      const data = localStorage.getItem(`op_finance_${userId}`);
+      let parsedPlan: FinancialPlan = defaultPlan;
+      if (data) {
+        parsedPlan = JSON.parse(data);
+      } else if (userId === DEMO_USER_ID) {
+        parsedPlan = INITIAL_FINANCIAL_PLAN;
+      }
+
+      const totalSpent = (parsedPlan.transactions || []).reduce(
+        (sum, tx) => sum + (Number(tx.amount) || 0),
+        0
+      );
+
+      return {
+        ...defaultPlan,
+        ...parsedPlan,
+        spentThisMonth: totalSpent,
+      };
+    } catch {
+      return defaultPlan;
+    }
+  }
+
+  public static saveFinancialPlan(userId: string, plan: FinancialPlan): void {
+    if (!this.isClient() || !userId) return;
+    try {
+      localStorage.setItem(
+        `op_finance_${userId}`,
+        JSON.stringify({ ...plan, userId, updatedAt: new Date().toISOString() })
+      );
+      notifyDataChange("finance", userId);
+    } catch (e) {
+      console.error("Failed to save financial plan:", e);
+    }
+  }
+
   // Reset user's wardrobe & data to clean/demo state
   public static resetUserToDefault(userId: string): void {
     if (!this.isClient() || !userId) return;
@@ -232,13 +403,27 @@ export class AppStorage {
         this.saveWardrobe(DEMO_USER_ID, INITIAL_WARDROBE_ITEMS);
         this.saveWearEvents(DEMO_USER_ID, INITIAL_WEAR_EVENTS);
         this.saveOutfits(DEMO_USER_ID, INITIAL_OUTFITS);
+        this.saveEvents(DEMO_USER_ID, INITIAL_EVENTS);
+        this.saveReminders(DEMO_USER_ID, INITIAL_REMINDERS);
+        this.saveFinancialPlan(DEMO_USER_ID, INITIAL_FINANCIAL_PLAN);
       } else {
-        const user = this.getUser(userId);
-        if (user) {
-          this.saveWardrobe(userId, []);
-          this.saveWearEvents(userId, []);
-          this.saveOutfits(userId, []);
-        }
+        this.saveWardrobe(userId, []);
+        this.saveWearEvents(userId, []);
+        this.saveOutfits(userId, []);
+        this.saveEvents(userId, []);
+        this.saveReminders(userId, []);
+        this.saveFinancialPlan(userId, {
+          userId,
+          monthlyBudget: 0,
+          monthlyFashionBudget: 0,
+          clothingBudget: 0,
+          shoppingLimit: 0,
+          savingsGoal: 0,
+          spentThisMonth: 0,
+          currency: "₹",
+          transactions: [],
+          updatedAt: new Date().toISOString(),
+        });
       }
       notifyDataChange("all", userId);
     } catch (e) {
@@ -249,13 +434,16 @@ export class AppStorage {
   // Export current user's data as JSON
   public static exportUserData(userId: string): string {
     const data = {
-      version: "2.0.0",
+      version: "3.0.0",
       userId,
       exportedAt: new Date().toISOString(),
       user: this.getUser(userId),
       wardrobe: this.getWardrobe(userId),
       wearEvents: this.getWearEvents(userId),
       outfits: this.getOutfits(userId),
+      events: this.getEvents(userId),
+      reminders: this.getReminders(userId),
+      financialPlan: this.getFinancialPlan(userId),
     };
     return JSON.stringify(data, null, 2);
   }
@@ -278,6 +466,21 @@ export class AppStorage {
           userId,
           data.outfits.map((outfit: Outfit) => ({ ...outfit, userId }))
         );
+      }
+      if (Array.isArray(data.events)) {
+        this.saveEvents(
+          userId,
+          data.events.map((event: EventItem) => ({ ...event, userId }))
+        );
+      }
+      if (Array.isArray(data.reminders)) {
+        this.saveReminders(
+          userId,
+          data.reminders.map((r: ReminderItem) => ({ ...r, userId }))
+        );
+      }
+      if (data.financialPlan) {
+        this.saveFinancialPlan(userId, { ...data.financialPlan, userId });
       }
       notifyDataChange("all", userId);
       return true;

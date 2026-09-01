@@ -17,6 +17,7 @@ import {
 } from "@/lib/colorVocabulary";
 import {
   Upload,
+  Camera,
   Sparkles,
   Check,
   ChevronDown,
@@ -26,6 +27,7 @@ import {
   CheckCircle2,
   Palette,
 } from "lucide-react";
+import { CameraCaptureModal } from "@/components/ui/CameraCaptureModal";
 import { getColorHex } from "@/lib/utils";
 
 export interface WardrobeFormModalProps {
@@ -120,6 +122,7 @@ export function WardrobeFormModal({
   const [imageUrl, setImageUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
 
   // Validation
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -185,7 +188,7 @@ export function WardrobeFormModal({
 
     try {
       const result = await aiService.analyzeClothingImage(
-        contextHint || imgSrc,
+        imgSrc,
         user,
         contextHint
       );
@@ -341,30 +344,55 @@ export function WardrobeFormModal({
       maxWidth="3xl"
     >
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Camera Modal Component */}
+        <CameraCaptureModal
+          isOpen={isCameraOpen}
+          onClose={() => setIsCameraOpen(false)}
+          onCapture={(img) => triggerAiAnalysis(img)}
+          title="Take Clothing Photo"
+          guideType="clothing"
+        />
+
         {/* Step 1: Image Upload & AI Scanning */}
         {!itemToEdit && !imagePreview && !isAnalyzing && (
           <div className="space-y-4">
-            <div className="relative border-2 border-dashed border-[var(--border)] hover:border-[var(--primary)] rounded-3xl p-8 text-center transition-all bg-[var(--surface-soft)] group cursor-pointer">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageFileChange}
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                aria-label="Upload clothing photo"
-              />
-              <div className="w-14 h-14 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center mx-auto text-[var(--primary)] shadow-sm group-hover:scale-105 transition-transform mb-3">
-                <Upload className="w-6 h-6" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Upload Card */}
+              <div className="relative border-2 border-dashed border-[var(--border)] hover:border-[var(--primary)] rounded-3xl p-6 text-center transition-all bg-[var(--surface-soft)] group cursor-pointer flex flex-col items-center justify-center min-h-[160px]">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageFileChange}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                  aria-label="Upload clothing photo"
+                />
+                <div className="w-12 h-12 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center mx-auto text-[var(--primary)] shadow-sm group-hover:scale-105 transition-transform mb-2">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <h4 className="text-xs sm:text-sm font-bold text-[var(--text-primary)]">
+                  Upload Clothing Photo
+                </h4>
+                <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                  Browse files or drop image
+                </p>
               </div>
-              <h4 className="text-sm font-bold text-[var(--text-primary)]">
-                Upload or Drop Clothing Photo
-              </h4>
-              <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-sm mx-auto">
-                OP AI will analyze the garment silhouette, color harmony, and pre-fill the details for you.
-              </p>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--primary-soft)] text-[var(--primary)] text-[11px] font-bold mt-4">
-                <Sparkles className="w-3.5 h-3.5" />
-                AI Auto-Fill Enabled
-              </div>
+
+              {/* Take Photo Card */}
+              <button
+                type="button"
+                onClick={() => setIsCameraOpen(true)}
+                className="border-2 border-dashed border-[var(--border)] hover:border-[var(--primary)] rounded-3xl p-6 text-center transition-all bg-[var(--surface-soft)] group cursor-pointer flex flex-col items-center justify-center min-h-[160px]"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center mx-auto text-[var(--primary)] shadow-sm group-hover:scale-105 transition-transform mb-2">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <h4 className="text-xs sm:text-sm font-bold text-[var(--text-primary)]">
+                  Take Photo with Camera
+                </h4>
+                <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                  Live snapshot from your device
+                </p>
+              </button>
             </div>
 
             {/* Quick Demo Sample Photos */}
@@ -378,7 +406,7 @@ export function WardrobeFormModal({
                     type="button"
                     key={sample.label}
                     onClick={() => handleSelectSamplePhoto(sample)}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--primary)] text-[var(--text-secondary)] hover:text-[var(--primary)] transition-all cursor-pointer shadow-2xs"
+                    className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--primary)] text-[var(--text-secondary)] hover:text-[var(--primary)] transition-all cursor-pointer shadow-2xs min-h-[32px]"
                   >
                     <span className="w-2 h-2 rounded-full bg-[var(--primary)]" />
                     <span>{sample.label}</span>
@@ -441,10 +469,17 @@ export function WardrobeFormModal({
               <div className="p-4 rounded-2xl bg-[var(--primary-soft)] border border-[var(--primary)]/20 flex items-start gap-3 animate-fade-in">
                 <Sparkles className="w-5 h-5 text-[var(--primary)] flex-shrink-0 mt-0.5" />
                 <div className="text-xs text-[var(--text-primary)]">
-                  <span className="font-bold">✦ OP AI Detected: </span>
-                  {aiDetected.name} ({aiDetected.category} • {aiDetected.color} • {aiDetected.fit} fit).
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-bold">✦ OP AI Fashion Analysis: </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--surface-elevated)] text-[var(--primary)] font-bold border border-[var(--primary)]/20">
+                      {aiDetected.model?.provider || "FashionCLIP"} • {aiDetected.model?.model || "EMaghakyan/fashion-clip"}
+                    </span>
+                  </div>
+                  <span>
+                    {aiDetected.name} ({aiDetected.category} • {aiDetected.color} • {aiDetected.fit} fit).
+                  </span>
                   <span className="text-[var(--text-secondary)] block mt-0.5">
-                    We&apos;ve pre-filled the details below. You can edit any field before saving.
+                    Pre-filled from visual analysis. You can modify any property before saving.
                   </span>
                 </div>
               </div>
@@ -453,12 +488,12 @@ export function WardrobeFormModal({
             {/* Photo Preview + Essential Primary Fields */}
             <div className="flex flex-col sm:flex-row gap-5 items-start">
               {/* Image Preview Box */}
-              <div className="w-full sm:w-44 aspect-[4/5] rounded-2xl bg-[var(--surface-soft)] border border-[var(--border)] relative overflow-hidden flex-shrink-0 group">
+              <div className="w-full sm:w-44 aspect-[4/5] rounded-2xl bg-[var(--surface-soft)] border border-[var(--border)] relative overflow-hidden flex-shrink-0 group flex items-center justify-center shadow-inner">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={imagePreview}
                   alt="Preview"
-                  className="w-full h-full object-cover rounded-2xl"
+                  className="w-full h-full object-contain p-1 rounded-2xl"
                 />
                 <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-xs font-semibold gap-1">
                   <RotateCcw className="w-4 h-4" />

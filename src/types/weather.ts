@@ -13,10 +13,12 @@ export interface WeatherContext {
   temperature: number; // in Celsius (°C)
   feelsLike: number; // in Celsius (°C)
   condition: WeatherCondition;
-  precipitation: string; // e.g. "No rain expected" or "Light rain (65%)"
+  precipitationProbability?: number; // 0-100%
+  precipitationAmount?: number; // mm
+  precipitation: string; // e.g. "No rain expected" or "Rain expected (65%)"
   humidity: number; // %
   windSpeed: number; // km/h
-  uvIndex?: number;
+  uvIndex?: number | null; // UV index (0-11)
   isCached?: boolean;
   timestamp: string | number;
 }

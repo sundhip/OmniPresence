@@ -6,6 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "fashion-clip": "services\\fashion_clip_service\\venv\\Scripts\\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8000 --app-dir services/fashion_clip_service",
+    "test:fashion": "npx tsx scripts/test-acceptance-fashionclip.ts",
+    "test:personalization": "npx tsx scripts/test-acceptance-personalization.ts",
+    "test:marketplace": "npx tsx scripts/test-acceptance-marketplace.ts",
+    "test:features13-22": "npx tsx scripts/test-acceptance-features13-22.ts",
+    "test:op-ai": "npx tsx scripts/test-acceptance-op-ai.ts",
+    "test:op-ai-general": "npx tsx scripts/test-acceptance-op-ai-general.ts",
+    "test:all": "npx tsx scripts/test-acceptance.ts",
     "lint": "eslint"
   },
   "dependencies": {

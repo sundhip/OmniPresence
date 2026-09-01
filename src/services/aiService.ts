@@ -1,13 +1,17 @@
 import { WardrobeCategory, Season } from "@/types/wardrobe";
 import { UserProfile } from "@/types/user";
-import { normalizeColor, ControlledColor, PRIMARY_COLORS } from "@/lib/colorVocabulary";
+import { ControlledColor } from "@/lib/colorVocabulary";
+import { fashionAnalysisService } from "./fashionAnalysisService";
+import { FashionAnalysisResult } from "@/lib/fashion/FashionModelProvider";
 
 export interface AIAnalysisResult {
   name: string;
   category: WardrobeCategory;
   subcategory: string;
+  itemType: string;
   color: ControlledColor;
   secondaryColors?: ControlledColor[];
+  pattern?: string;
   style: string;
   occasion: string[];
   season: Season[];
@@ -15,191 +19,62 @@ export interface AIAnalysisResult {
   size: string;
   material?: string;
   brand?: string;
-  pattern?: string;
-  confidence: "high" | "medium" | "low";
+  confidence: "high" | "medium" | "low" | any;
+  model: {
+    provider: string;
+    model: string;
+    version: string;
+    device?: string;
+  };
   aiSummary: string;
 }
 
-// Map of keywords and categories for intelligent silhouette analysis
-const CATEGORY_RULES: Array<{
-  category: WardrobeCategory;
-  keywords: string[];
-  subcategories: string[];
-  defaultOccasions: string[];
-  defaultSeasons: Season[];
-}> = [
-  {
-    category: "Dresses",
-    keywords: ["dress", "gown", "frock", "midi", "maxi", "mini dress", "sundress", "slip dress"],
-    subcategories: ["Midi Dress", "Slip Dress", "Wrap Dress", "Cocktail Dress", "Sundress", "Maxi Dress"],
-    defaultOccasions: ["Party", "Date", "Dinner", "Formal Event", "Everyday"],
-    defaultSeasons: ["Spring", "Summer", "All-Season"],
-  },
-  {
-    category: "Tops",
-    keywords: ["shirt", "t-shirt", "tee", "blouse", "top", "sweater", "hoodie", "polo", "knitwear", "turtleneck"],
-    subcategories: ["Button-Down Shirt", "Classic T-Shirt", "Knit Sweater", "Silk Blouse", "Polo Shirt", "Hoodie"],
-    defaultOccasions: ["Office", "Meeting", "Casual", "Everyday", "Weekend Casual"],
-    defaultSeasons: ["All-Season"],
-  },
-  {
-    category: "Bottoms",
-    keywords: ["pants", "trousers", "jeans", "chinos", "skirt", "shorts", "slacks", "cargo", "denim"],
-    subcategories: ["Tailored Trousers", "Straight Jeans", "Pleated Chinos", "Midi Skirt", "Relaxed Slacks"],
-    defaultOccasions: ["Office", "Casual", "Everyday", "Dinner", "Weekend Casual"],
-    defaultSeasons: ["All-Season"],
-  },
-  {
-    category: "Outerwear",
-    keywords: ["jacket", "coat", "blazer", "bomber", "overcoat", "cardigan", "trench", "parka", "windbreaker"],
-    subcategories: ["Structured Blazer", "Trench Coat", "Wool Overcoat", "Bomber Jacket", "Cardigan"],
-    defaultOccasions: ["Office", "Meeting", "Dinner", "Formal Event", "Travel"],
-    defaultSeasons: ["Autumn", "Winter", "Spring"],
-  },
-  {
-    category: "Shoes",
-    keywords: ["shoe", "shoes", "sneaker", "sneakers", "boots", "loafers", "heels", "flats", "oxford", "derby"],
-    subcategories: ["Leather Loafers", "Minimalist Sneakers", "Chelsea Boots", "Oxford Shoes", "Dress Heels"],
-    defaultOccasions: ["Office", "Meeting", "Dinner", "Casual", "Everyday"],
-    defaultSeasons: ["All-Season"],
-  },
-  {
-    category: "Accessories",
-    keywords: ["watch", "belt", "bag", "tote", "scarf", "hat", "glasses", "sunglasses", "tie", "jewelry"],
-    subcategories: ["Leather Belt", "Minimalist Watch", "Leather Tote", "Silk Scarf", "Classic Sunglasses"],
-    defaultOccasions: ["Office", "Meeting", "Formal Event", "Dinner", "Everyday"],
-    defaultSeasons: ["All-Season"],
-  },
-];
-
 export const aiService = {
   /**
-   * Analyze clothing image with OP AI Vision Intelligence
-   * Extracts category, normalized color (with secondary color support), fit, style, and auto-fills default user profile size.
+   * Analyze clothing image using FashionCLIP (EMaghakyan/fashion-clip)
+   * Dispatches to dedicated Fashion Analysis Service and maps zero-shot classification results.
    */
   analyzeClothingImage: async (
     imageInput: string,
     userProfile?: UserProfile | null,
     manualContextText?: string
   ): Promise<AIAnalysisResult> => {
-    // Artificial latency (700ms) for polished scanning experience
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    // Artificial latency (400ms) for UI feedback transitions
+    await new Promise((resolve) => setTimeout(resolve, 400));
 
-    const lowerInput = (imageInput + " " + (manualContextText || "")).toLowerCase();
+    const analysis: FashionAnalysisResult = await fashionAnalysisService.analyzeImage(
+      imageInput,
+      userProfile,
+      manualContextText
+    );
 
-    // 1. Detect Category & Subcategory
-    let detectedCategory: WardrobeCategory = "Tops";
-    let detectedSubcategory = "Classic Shirt";
-    let defaultOccasions = ["Casual", "Everyday"];
-    let defaultSeasons: Season[] = ["All-Season"];
-
-    for (const rule of CATEGORY_RULES) {
-      if (rule.keywords.some((kw) => lowerInput.includes(kw))) {
-        detectedCategory = rule.category;
-        detectedSubcategory = rule.subcategories[0];
-        defaultOccasions = rule.defaultOccasions;
-        defaultSeasons = rule.defaultSeasons;
-        break;
-      }
-    }
-
-    // 2. Detect Color with Color Normalization Engine (Fixes RED DRESS bug & basic color mapping)
-    // Check known image patterns or descriptors first
-    let detectedColor: ControlledColor = "Black";
-    let detectedSecondaryColors: ControlledColor[] | undefined = undefined;
-
-    // Special check for Red Dress known asset ID or description
-    if (
-      lowerInput.includes("1595777457583-95e059d581b8") ||
-      (lowerInput.includes("red") && (lowerInput.includes("dress") || detectedCategory === "Dresses"))
-    ) {
-      detectedCategory = "Dresses";
-      detectedColor = "Red";
-      detectedSubcategory = "Midi Evening Dress";
-      defaultOccasions = ["Party", "Date", "Dinner", "Formal Event"];
-      defaultSeasons = ["Spring", "Summer"];
-    } else {
-      const normalized = normalizeColor(lowerInput);
-      detectedColor = normalized.primary;
-      detectedSecondaryColors = normalized.secondary;
-    }
-
-    // 3. Determine Sizing from User Profile Defaults (Part 14, 15, 30)
-    let defaultSize = "M";
-    if (userProfile?.sizes) {
-      if (detectedCategory === "Tops" || detectedCategory === "Dresses" || detectedCategory === "Outerwear") {
-        defaultSize = userProfile.sizes.tops || "M";
-      } else if (detectedCategory === "Bottoms") {
-        defaultSize = userProfile.sizes.bottoms || "32";
-      } else if (detectedCategory === "Shoes") {
-        defaultSize = userProfile.sizes.shoes || "10 US";
-      }
-    }
-
-    // 4. Inferred Fit & Silhouette
-    let detectedFit = "Regular";
-    if (lowerInput.includes("oversized") || lowerInput.includes("loose") || lowerInput.includes("baggy")) {
-      detectedFit = "Oversized";
-    } else if (lowerInput.includes("slim") || lowerInput.includes("fitted") || lowerInput.includes("skinny")) {
-      detectedFit = "Slim";
-    } else if (lowerInput.includes("relaxed")) {
-      detectedFit = "Relaxed";
-    } else if (userProfile?.fitPreference && userProfile.fitPreference !== "Not Specified") {
-      // Respect user profile fit tendency as gentle baseline
-      detectedFit = userProfile.fitPreference;
-    }
-
-    // 5. Detect Brand if mentioned
-    let detectedBrand: string | undefined = undefined;
-    const knownBrands = [
-      "Acne Studios",
-      "Theory",
-      "Lemaire",
-      "Cos Atelier",
-      "Zara",
-      "Nike",
-      "Uniqlo",
-      "Crockett & Jones",
-      "Junghans",
-      "Valentino",
-      "Prada",
-    ];
-    for (const b of knownBrands) {
-      if (lowerInput.includes(b.toLowerCase())) {
-        detectedBrand = b;
-        break;
-      }
-    }
-
-    // 6. Generate Contextual Name
-    const namePrefix = detectedColor;
-    const fitLabel = detectedFit === "Oversized" ? "Oversized " : detectedFit === "Slim" ? "Tailored " : "";
-    const name = `${namePrefix} ${fitLabel}${detectedSubcategory}`.trim();
+    // Determine confidence level
+    const avgConf =
+      (analysis.confidence.category +
+        analysis.confidence.color +
+        analysis.confidence.pattern +
+        analysis.confidence.style) /
+      4;
+    const confidenceTier = avgConf >= 0.85 ? "high" : avgConf >= 0.6 ? "medium" : "low";
 
     return {
-      name,
-      category: detectedCategory,
-      subcategory: detectedSubcategory,
-      color: detectedColor,
-      secondaryColors: detectedSecondaryColors,
-      style: detectedFit === "Oversized" ? "Relaxed Minimal" : "Modern Classic",
-      occasion: defaultOccasions,
-      season: defaultSeasons,
-      fit: detectedFit,
-      size: defaultSize,
-      brand: detectedBrand,
-      material:
-        detectedCategory === "Shoes"
-          ? "Calfskin Leather"
-          : detectedCategory === "Outerwear"
-          ? "Wool Blend"
-          : "100% Cotton",
-      confidence: "high",
-      aiSummary: `OP AI identified a ${detectedColor.toLowerCase()} ${detectedCategory.toLowerCase()} piece${
-        detectedSecondaryColors && detectedSecondaryColors.length > 0
-          ? ` with ${detectedSecondaryColors.join(", ").toLowerCase()} accents`
-          : ""
-      }. Defaulted to size ${defaultSize} from ${userProfile?.name || "your"} profile.`,
+      name: analysis.name,
+      category: analysis.category,
+      subcategory: analysis.subcategory,
+      itemType: analysis.itemType,
+      color: analysis.primaryColor,
+      secondaryColors: analysis.secondaryColors,
+      pattern: analysis.pattern,
+      style: analysis.style,
+      occasion: analysis.occasion,
+      season: analysis.season,
+      fit: analysis.fit,
+      size: analysis.size,
+      material: analysis.material,
+      brand: analysis.brand,
+      confidence: confidenceTier,
+      model: analysis.model,
+      aiSummary: analysis.aiSummary,
     };
   },
 

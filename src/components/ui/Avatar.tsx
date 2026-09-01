@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { User } from "lucide-react";
 
@@ -14,6 +14,10 @@ export interface AvatarProps {
 export function Avatar({ src, name = "User", size = "md", className }: AvatarProps) {
   const [imageError, setImageError] = useState(false);
 
+  useEffect(() => {
+    setImageError(false);
+  }, [src]);
+
   const sizeStyles = {
     sm: "w-8 h-8 text-xs",
     md: "w-10 h-10 text-sm",
@@ -22,8 +26,10 @@ export function Avatar({ src, name = "User", size = "md", className }: AvatarPro
   };
 
   const getInitials = (n: string) => {
+    if (!n) return "U";
     return n
       .split(" ")
+      .filter(Boolean)
       .map((part) => part[0])
       .slice(0, 2)
       .join("")

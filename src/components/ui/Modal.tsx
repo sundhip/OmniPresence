@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 
@@ -11,6 +12,7 @@ export interface ModalProps {
   description?: string;
   children: React.ReactNode;
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl";
+  size?: "sm" | "md" | "lg" | "xl" | "2xl";
 }
 
 export function Modal({
@@ -19,8 +21,16 @@ export function Modal({
   title,
   description,
   children,
-  maxWidth = "lg",
+  maxWidth,
+  size = "lg",
 }: ModalProps) {
+  const [mounted, setMounted] = useState(false);
+  const effectiveMaxWidth = maxWidth || size || "lg";
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -37,7 +47,7 @@ export function Modal({
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const maxWidthClasses = {
     sm: "max-w-sm",
@@ -49,20 +59,20 @@ export function Modal({
     "4xl": "max-w-4xl",
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-      {/* Backdrop */}
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+      {/* Full-screen Backdrop attached directly to document body */}
       <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity animate-fade-in"
+        className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Modal Container */}
+      {/* Modal Dialog Box — Centered, bounded height with independent internal scrolling */}
       <div
         className={cn(
-          "relative w-full z-10 my-8 rounded-3xl overflow-hidden shadow-2xl border transition-all animate-fade-in flex flex-col max-h-[90vh]",
-          maxWidthClasses[maxWidth]
+          "relative w-full z-10 my-auto rounded-3xl overflow-hidden shadow-2xl border flex flex-col max-h-[85vh]",
+          maxWidthClasses[effectiveMaxWidth as keyof typeof maxWidthClasses] || maxWidthClasses.lg
         )}
         style={{
           backgroundColor: "var(--surface-elevated)",
@@ -73,22 +83,22 @@ export function Modal({
       >
         {/* Header */}
         {(title || description) && (
-          <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-[var(--border-subtle)] flex-shrink-0">
+          <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-[var(--border-subtle)] flex-shrink-0">
             <div>
               {title && (
-                <h3 className="text-xl font-bold text-[var(--text-primary)] tracking-tight">
+                <h3 className="text-lg sm:text-xl font-bold text-[var(--text-primary)] tracking-tight">
                   {title}
                 </h3>
               )}
               {description && (
-                <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-1">
+                <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-0.5">
                   {description}
                 </p>
               )}
             </div>
             <button
               onClick={onClose}
-              className="p-2 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-soft)] transition-colors"
+              className="p-2 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-soft)] transition-colors cursor-pointer"
               aria-label="Close modal"
             >
               <X className="w-5 h-5" />
@@ -96,9 +106,11 @@ export function Modal({
           </div>
         )}
 
-        {/* Body Content */}
-        <div className="p-6 overflow-y-auto flex-1">{children}</div>
+        {/* Body Content with smooth vertical scroll */}
+        <div className="p-6 overflow-y-auto flex-1 min-h-0 space-y-4">{children}</div>
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

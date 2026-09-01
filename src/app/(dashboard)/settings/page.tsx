@@ -16,9 +16,6 @@ import {
   Upload,
   RotateCcw,
   Sparkles,
-  CloudSun,
-  Calendar,
-  Wallet,
   ShoppingBag,
   Activity,
   CheckCircle2,
@@ -397,70 +394,6 @@ export default function SettingsPage() {
           >
             Reset My Wardrobe Data
           </Button>
-        </div>
-      </div>
-
-      {/* Phase 2+ Connected Services Extension Previews */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-card)] space-y-4">
-        <h3 className="text-base font-bold text-[var(--text-primary)] border-b border-[var(--border-subtle)] pb-3 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-[var(--primary)]" />
-          Connected Intelligence Services (Phase 2 Preview)
-        </h3>
-        <p className="text-xs text-[var(--text-secondary)]">
-          These services are architected as modular extension points for Phase 2 integration.
-        </p>
-
-        <div className="space-y-3 pt-2">
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border-subtle)]">
-            <div className="flex items-center gap-3">
-              <CloudSun className="w-5 h-5 text-[var(--primary)]" />
-              <div>
-                <p className="text-xs font-bold text-[var(--text-primary)]">
-                  Weather Context Engine (OpenWeather API)
-                </p>
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  Real-time temperature and forecast context for intelligent fabric recommendations.
-                </p>
-              </div>
-            </div>
-            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border)]">
-              Phase 2
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border-subtle)]">
-            <div className="flex items-center gap-3">
-              <Calendar className="w-5 h-5 text-[var(--primary)]" />
-              <div>
-                <p className="text-xs font-bold text-[var(--text-primary)]">
-                  Google Calendar & Schedule Understanding
-                </p>
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  Automatic event schedule sync and proactive dress code preparation.
-                </p>
-              </div>
-            </div>
-            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border)]">
-              Phase 2
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border-subtle)]">
-            <div className="flex items-center gap-3">
-              <Wallet className="w-5 h-5 text-[var(--primary)]" />
-              <div>
-                <p className="text-xs font-bold text-[var(--text-primary)]">
-                  Wardrobe Financial Intelligence & &quot;Do I Need This?&quot;
-                </p>
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  Cost-per-wear analytics and purchase duplication warnings.
-                </p>
-              </div>
-            </div>
-            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--border)]">
-              Phase 2
-            </span>
-          </div>
         </div>
       </div>
     </div>

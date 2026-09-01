@@ -89,12 +89,6 @@ export default function LandingPage() {
 
       {/* Hero Content */}
       <main className="relative z-10 max-w-5xl mx-auto px-6 py-12 sm:py-16 text-center space-y-8 my-auto">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-subtle)] text-xs font-semibold animate-fade-in">
-          <Sparkles className="w-3.5 h-3.5 text-[var(--primary)] animate-pulse" />
-          <span className="text-[var(--text-primary)]">Phase 1 Intelligence Core Active</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
-        </div>
-
         <div className="space-y-5">
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-[var(--text-primary)] max-w-4xl mx-auto leading-[1.08]">
             Your Everyday Life,{" "}

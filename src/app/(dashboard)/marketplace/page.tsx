@@ -231,12 +231,12 @@ export default function MarketplacePage() {
     setIsEvaluatingProduct(true);
     setEvalResult(null);
     try {
-      const res = await financeService.evaluatePurchase({
-        userId: user.id,
-        itemPrice: prod.price,
-        itemCategory: prod.category,
-        itemName: prod.title,
-      });
+      const res = await financeService.evaluatePurchase(
+        prod.title,
+        prod.price,
+        prod.category,
+        prod.colors?.[0]
+      );
       setEvalResult(res);
     } catch (e: any) {
       toastError("Evaluation failed", e.message || "Could not evaluate financial impact");

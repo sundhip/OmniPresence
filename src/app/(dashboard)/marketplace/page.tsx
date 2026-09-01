@@ -210,7 +210,11 @@ export default function MarketplacePage() {
         subcategory: prod.subcategory || prod.category || "General",
         color: prod.colors?.[0] || "Black",
         brand: prod.brand || prod.provider,
-        style: prod.style || "Casual",
+        fit: prod.fit || "Regular",
+        material: prod.material || undefined,
+        season: ["All-Season"],
+        occasion: prod.occasion ? [prod.occasion] : ["Casual"],
+        wearCount: 0,
         imageUrl: prod.imageUrl,
         notes: `Imported from ${prod.provider} (${prod.currency} ${prod.price})`,
       });

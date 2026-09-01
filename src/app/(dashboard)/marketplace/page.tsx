@@ -207,7 +207,7 @@ export default function MarketplacePage() {
         userId: user.id,
         name: prod.title,
         category: prod.category as any,
-        subcategory: prod.subcategory || undefined,
+        subcategory: prod.subcategory || prod.category || "General",
         color: prod.colors?.[0] || "Black",
         brand: prod.brand || prod.provider,
         style: prod.style || "Casual",

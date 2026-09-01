@@ -33,7 +33,8 @@ export async function POST(req: NextRequest) {
     const response = await marketplaceAggregator.searchAndRank(
       parsedQuery,
       filters,
-      userProfile
+      userProfile,
+      userId
     );
 
     return NextResponse.json({

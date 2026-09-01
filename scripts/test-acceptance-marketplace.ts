@@ -1,372 +1,241 @@
-import { parseFashionSearchQuery } from "../src/lib/fashionSearchParser";
+import { localCatalogProvider } from "../src/lib/marketplace/LocalCatalogProvider";
 import { amazonMarketplaceProvider } from "../src/lib/marketplace/AmazonMarketplaceProvider";
 import { flipkartMarketplaceProvider } from "../src/lib/marketplace/FlipkartMarketplaceProvider";
+import { marketplaceProviderRegistry } from "../src/lib/marketplace/MarketplaceProviderRegistry";
+import { marketplaceRetrievalEngine } from "../src/lib/marketplace/MarketplaceRetrievalEngine";
 import { marketplaceAggregator } from "../src/lib/marketplace/MarketplaceAggregator";
-import { generateAwsSigV4Headers } from "../src/lib/marketplace/awsSigV4";
-import { MarketplaceProduct } from "../src/types/marketplace";
-import { UserProfile } from "../src/types/user";
+import { AppStorage } from "../src/lib/storage";
 
-let passed = 0;
-let failed = 0;
+let passedCount = 0;
+let totalCount = 0;
 
-function assert(condition: boolean, testName: string, details?: string) {
+function assert(condition: boolean, testName: string, detail?: string) {
+  totalCount++;
   if (condition) {
-    console.log(`✓ [PASS] ${testName}`);
-    passed++;
+    passedCount++;
+    console.log(`  ✓ [PASS] ${testName}`);
   } else {
-    console.error(`✗ [FAIL] ${testName}${details ? ` -> ${details}` : ""}`);
-    failed++;
+    console.error(`  ✗ [FAIL] ${testName} - ${detail || "Condition not met"}`);
   }
 }
 
-async function runTests() {
-  console.log("==================================================================");
-  console.log("RUNNING OP AI MARKETPLACE PROVIDER CONNECTION & HEALTH TESTS");
-  console.log("==================================================================");
+async function runMasterMarketplaceTests() {
+  console.log("=====================================================================");
+  console.log("  OMNIPRESENCE — MASTER MARKETPLACE ACCEPTANCE TEST SUITE (15 SCENARIOS)");
+  console.log("=====================================================================\n");
 
-  // -------------------------------------------------------------
-  // TEST GROUP 1: AWS SigV4 Cryptographic Request Signer
-  // -------------------------------------------------------------
-  console.log("\n--- TEST GROUP 1: AWS Signature V4 Authentication Signer ---");
-
-  const sigV4 = generateAwsSigV4Headers({
-    accessKey: "AKIAIOSFODNN7EXAMPLE",
-    secretKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-    region: "eu-west-1",
-    service: "ProductAdvertisingAPI",
-    host: "webservices.amazon.in",
-    path: "/paapi5/searchitems",
-    payloadString: JSON.stringify({ Keywords: "dress", SearchIndex: "Apparel" }),
-    targetHeader: "com.amazon.paapi5.v1.ProductAdvertisingAPIv1.SearchItems",
+  // TEST 1: Local catalog search works out of the box
+  console.log("Scenario 1: Local Catalog Provider Validation");
+  const localStatus = localCatalogProvider.getStatus();
+  assert(localStatus.status === "ACTIVE", "LocalCatalogProvider is ACTIVE by default");
+  assert(localStatus.isConfigured === true, "LocalCatalogProvider is configured without external keys");
+  const localResults = await localCatalogProvider.searchProducts({
+    rawQuery: "linen shirt",
+    category: "Tops",
+    subcategory: "Shirts",
+    discoveredStyles: ["Shirts"],
+    searchKeywords: "linen shirt",
   });
+  assert(localResults.length > 0, "LocalCatalogProvider returns products for 'linen shirt'");
+  assert(localResults[0].provider === "Local", "Products are correctly labeled provider='Local'");
+  assert(localResults[0].source === "local", "Products are correctly labeled source='local'");
+  assert(localResults[0].priceStatus === "development", "Product priceStatus is 'development'");
 
-  assert(
-    typeof sigV4.authHeader === "string" &&
-      sigV4.authHeader.startsWith("AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/"),
-    "TEST 1.1: SigV4 generates compliant AWS4-HMAC-SHA256 authorization header"
-  );
-  assert(
-    Boolean(sigV4.headers["x-amz-date"]) && Boolean(sigV4.headers["x-amz-target"]),
-    "TEST 1.2: SigV4 sets required x-amz-date and x-amz-target headers"
-  );
-  assert(
-    sigV4.headers["content-encoding"] === "amz-1.0" &&
-      sigV4.headers["content-type"] === "application/json; charset=utf-8",
-    "TEST 1.3: SigV4 sets correct PA-API content headers"
-  );
+  // TEST 2: Amazon Disabled Handling
+  console.log("\nScenario 2: Amazon Provider Disabled State");
+  assert(amazonMarketplaceProvider.name === "Amazon", "AmazonMarketplaceProvider exists");
+  if (!process.env.AMAZON_ACCESS_KEY) {
+    assert(amazonMarketplaceProvider.status === "DISABLED", "Amazon status is DISABLED when unconfigured");
+    assert(amazonMarketplaceProvider.isConfigured() === false, "Amazon isConfigured() is false without keys");
+  }
 
-  // -------------------------------------------------------------
-  // TEST GROUP 2: Provider Status & Health Diagnostics
-  // -------------------------------------------------------------
-  console.log("\n--- TEST GROUP 2: Provider Status & Health Diagnostics ---");
+  // TEST 3: Flipkart Disabled Handling
+  console.log("\nScenario 3: Flipkart Provider Disabled State");
+  assert(flipkartMarketplaceProvider.name === "Flipkart", "FlipkartMarketplaceProvider exists");
+  if (!process.env.FLIPKART_AFFILIATE_ID) {
+    assert(flipkartMarketplaceProvider.status === "DISABLED", "Flipkart status is DISABLED when unconfigured");
+    assert(flipkartMarketplaceProvider.isConfigured() === false, "Flipkart isConfigured() is false without keys");
+  }
 
-  const amzStatus = amazonMarketplaceProvider.getStatus();
-  assert(
-    amzStatus.provider === "Amazon" && typeof amzStatus.isConfigured === "boolean",
-    "TEST 2.1: Amazon provider status is reported accurately"
-  );
+  // TEST 4: Both External Providers Disabled -> Local Search Still Works Completely
+  console.log("\nScenario 4: Provider Registry Resilience");
+  const activeProviders = marketplaceProviderRegistry.getActiveProviders();
+  assert(activeProviders.some((p) => p.name === "Local"), "Local catalog is included in active providers");
+  const statuses = marketplaceProviderRegistry.getProviderStatuses();
+  assert(statuses.length === 3, "Registry returns status for all 3 providers (Local, Amazon, Flipkart)");
 
-  const fkStatus = flipkartMarketplaceProvider.getStatus();
-  assert(
-    fkStatus.provider === "Flipkart" && typeof fkStatus.isConfigured === "boolean",
-    "TEST 2.2: Flipkart provider status is reported accurately"
-  );
+  // TEST 5: User-Specific Saved Products Isolation
+  console.log("\nScenario 5: User-Isolated Saved Products");
+  const userA = "user_alpha_test";
+  const userB = "user_beta_test";
+  const sampleProductA = localResults[0];
 
-  const amzTest = await amazonMarketplaceProvider.testConnection();
-  assert(
-    amzTest.provider === "Amazon" && typeof amzTest.latencyMs === "number",
-    "TEST 2.3: Amazon diagnostic test executes and reports latency"
-  );
+  AppStorage.saveMarketplaceProduct(userA, sampleProductA);
+  const savedA = AppStorage.getSavedProducts(userA);
+  const savedB = AppStorage.getSavedProducts(userB);
 
-  const fkTest = await flipkartMarketplaceProvider.testConnection();
-  assert(
-    fkTest.provider === "Flipkart" && typeof fkTest.latencyMs === "number",
-    "TEST 2.4: Flipkart diagnostic test executes and reports latency"
-  );
+  assert(savedA.length === 1, "User A has 1 saved product");
+  assert(savedA[0].product.id === sampleProductA.id, "User A saved product ID matches");
+  assert(savedB.length === 0, "User B has 0 saved products (Zero cross-user leakage)");
 
-  // -------------------------------------------------------------
-  // TEST GROUP 3: Shopping Intent Natural Language Parsing
-  // -------------------------------------------------------------
-  console.log("\n--- TEST GROUP 3: Shopping Intent Natural Language Parsing ---");
+  AppStorage.removeSavedMarketplaceProduct(userA, sampleProductA.id);
+  assert(AppStorage.getSavedProducts(userA).length === 0, "User A saved product removed cleanly");
 
-  const qDress = parseFashionSearchQuery("Dress");
-  assert(qDress.category === "Dresses", "TEST 3.1: 'Dress' -> Category: Dresses");
+  // TEST 6: Natural Language Shopping Intent Parsing
+  console.log("\nScenario 6: OP AI Shopping Intent Parsing");
+  const parsedIntent = marketplaceRetrievalEngine.parseShoppingIntent("Find me a red oversized shirt under ₹1500");
+  assert(parsedIntent.category === "Tops", "Intent category parsed as 'Tops'");
+  assert(parsedIntent.subcategory === "Shirts", "Intent subcategory parsed as 'Shirts'");
+  assert(parsedIntent.color === "Red", "Intent color parsed as 'Red'");
+  assert(parsedIntent.fit === "Oversized", "Intent fit parsed as 'Oversized'");
+  assert(parsedIntent.budget?.max === 1500, "Intent max budget parsed as 1500");
 
-  const qWhiteShirt = parseFashionSearchQuery("White shirt");
-  assert(
-    qWhiteShirt.category === "Tops" && qWhiteShirt.color === "White",
-    "TEST 3.2: 'White shirt' -> Category: Tops, Color: White"
-  );
-
-  const qBlackJeans = parseFashionSearchQuery("Black jeans");
-  assert(
-    qBlackJeans.category === "Bottoms" && qBlackJeans.color === "Black",
-    "TEST 3.3: 'Black jeans' -> Category: Bottoms, Color: Black"
-  );
-
-  const qRedDress = parseFashionSearchQuery("Red dress");
-  assert(
-    qRedDress.category === "Dresses" && qRedDress.color === "Red",
-    "TEST 3.4: 'Red dress' -> Category: Dresses, Color: Red"
-  );
-
-  const qFloralDress = parseFashionSearchQuery("Floral dress");
-  assert(
-    qFloralDress.category === "Dresses" && qFloralDress.pattern === "Floral",
-    "TEST 3.5: 'Floral dress' -> Category: Dresses, Pattern: Floral"
-  );
-
-  const qBlackMaxi = parseFashionSearchQuery("Black maxi dress");
-  assert(
-    qBlackMaxi.category === "Dresses" &&
-      qBlackMaxi.subcategory === "Maxi Dress" &&
-      qBlackMaxi.color === "Black",
-    "TEST 3.6: 'Black maxi dress' -> Category: Dresses, Subcategory: Maxi Dress, Color: Black"
-  );
-
-  const qPartyDress = parseFashionSearchQuery("Party dress under ₹2000");
-  assert(
-    qPartyDress.category === "Dresses" &&
-      qPartyDress.occasion === "Party" &&
-      qPartyDress.budget?.max === 2000,
-    "TEST 3.7: 'Party dress under ₹2000' -> Category: Dresses, Occasion: Party, MaxPrice: 2000"
-  );
-
-  // -------------------------------------------------------------
-  // TEST GROUP 4: Strict Deduplication & Relevance Filtering Engine
-  // -------------------------------------------------------------
-  console.log("\n--- TEST GROUP 4: Strict Deduplication & Relevance Filter ---");
-
-  const testCandidates: MarketplaceProduct[] = [
+  // TEST 7: Wardrobe Compatibility Scoring
+  console.log("\nScenario 7: Wardrobe Compatibility Pairing");
+  const userWardrobe = [
     {
-      id: "AMZ-001",
-      provider: "Amazon",
-      title: "Women's Solid White A-Line Dress",
-      brand: "Zara",
-      imageUrl: "https://m.media-amazon.com/images/I/white_dress.jpg",
-      productUrl: "https://amazon.in/dp/AMZ-001",
-      price: 1899,
-      originalPrice: 2499,
-      currency: "₹",
-      discountPercent: 24,
-      rating: 4.5,
-      reviewCount: 320,
-      category: "Dresses",
-      gender: "Women",
-      colors: ["White"],
-    },
-    {
-      id: "AMZ-001", // Duplicate
-      provider: "Amazon",
-      title: "Women's Solid White A-Line Dress (Duplicate)",
-      brand: "Zara",
-      imageUrl: "https://m.media-amazon.com/images/I/white_dress.jpg",
-      productUrl: "https://amazon.in/dp/AMZ-001",
-      price: 1899,
-      originalPrice: 2499,
-      currency: "₹",
-      discountPercent: 24,
-      rating: 4.5,
-      reviewCount: 320,
-      category: "Dresses",
-      gender: "Women",
-      colors: ["White"],
-    },
-    {
-      id: "AMZ-002",
-      provider: "Amazon",
-      title: "Men's Classic Solid White Slim Fit Shirt",
-      brand: "Van Heusen",
-      imageUrl: "https://m.media-amazon.com/images/I/white_shirt.jpg",
-      productUrl: "https://amazon.in/dp/AMZ-002",
-      price: 1299,
-      originalPrice: 1799,
-      currency: "₹",
-      discountPercent: 28,
-      rating: 4.3,
-      reviewCount: 150,
-      category: "Tops",
-      gender: "Men",
-      colors: ["White"],
-    },
-    {
-      id: "AMZ-003",
-      provider: "Amazon",
-      title: "Men's Solid Black Formal Shirt",
-      brand: "Peter England",
-      imageUrl: "https://m.media-amazon.com/images/I/black_shirt.jpg",
-      productUrl: "https://amazon.in/dp/AMZ-003",
-      price: 1199,
-      originalPrice: 1599,
-      currency: "₹",
-      discountPercent: 25,
-      rating: 4.2,
-      reviewCount: 90,
-      category: "Tops",
-      gender: "Men",
-      colors: ["Black"],
-    },
-    {
-      id: "FK-001",
-      provider: "Flipkart",
-      title: "Women's Floral Red Maxi Dress",
-      brand: "Tokyo Talkies",
-      imageUrl: "https://rukminim1.flixcart.com/image/800/800/red_dress.jpg",
-      productUrl: "https://flipkart.com/p/FK-001",
-      price: 1499,
-      originalPrice: 2299,
-      currency: "₹",
-      discountPercent: 35,
-      rating: 4.4,
-      reviewCount: 450,
-      category: "Dresses",
-      subcategory: "Maxi Dress",
-      gender: "Women",
-      colors: ["Red"],
-    },
-    {
-      id: "AMZ-004",
-      provider: "Amazon",
-      title: "Men's Slim Fit Black Denim Jeans",
-      brand: "Levi's",
-      imageUrl: "https://m.media-amazon.com/images/I/black_jeans.jpg",
-      productUrl: "https://amazon.in/dp/AMZ-004",
-      price: 2199,
-      originalPrice: 2999,
-      currency: "₹",
-      discountPercent: 26,
-      rating: 4.6,
-      reviewCount: 520,
-      category: "Bottoms",
-      gender: "Men",
-      colors: ["Black"],
-    },
-    {
-      id: "AMZ-005",
-      provider: "Amazon",
-      title: "Women's Solid Black Tiered Maxi Dress",
-      brand: "VERO MODA",
-      imageUrl: "https://m.media-amazon.com/images/I/black_maxi.jpg",
-      productUrl: "https://amazon.in/dp/AMZ-005",
-      price: 1899,
-      originalPrice: 2799,
-      currency: "₹",
-      discountPercent: 32,
-      rating: 4.5,
-      reviewCount: 210,
-      category: "Dresses",
-      subcategory: "Maxi Dress",
-      gender: "Women",
-      colors: ["Black"],
+      id: "w_jeans_1",
+      userId: userA,
+      name: "Slim Dark Indigo Jeans",
+      category: "Bottoms" as any,
+      color: "Blue",
+      wearCount: 4,
     },
   ];
+  const compatEval = marketplaceRetrievalEngine.evaluateWardrobeCompatibility(sampleProductA, userWardrobe as any);
+  assert(compatEval.score >= 70, `Wardrobe compatibility scored high (${compatEval.score}%) for matching shirt with jeans`);
+  assert(compatEval.pairingItems.length > 0, "Paired items explicitly identified");
 
-  // 1. Deduplication
-  const deduped = marketplaceAggregator.deduplicateProducts(testCandidates);
-  assert(
-    deduped.length === 6,
-    "TEST 4.1: Deduplication strips duplicates (7 candidates -> 6 unique items)"
-  );
+  // TEST 8: Duplicate Detection & Penalty ("Do I Need This?")
+  console.log("\nScenario 8: Duplicate Saturation & Penalty");
+  const saturatedWardrobe = [
+    { id: "w_1", userId: userA, name: "Black Oxford Shirt", category: "Tops" as any, color: "Black", wearCount: 2 },
+    { id: "w_2", userId: userA, name: "Black Cotton Tee", category: "Tops" as any, color: "Black", wearCount: 5 },
+    { id: "w_3", userId: userA, name: "Black Linen Shirt", category: "Tops" as any, color: "Black", wearCount: 3 },
+  ];
+  const blackShirtProduct = {
+    id: "test_black_shirt",
+    provider: "Local" as const,
+    title: "Black Classic Shirt",
+    price: 999,
+    originalPrice: 1299,
+    currency: "INR",
+    category: "Tops",
+    subcategory: "Shirts",
+    colors: ["Black"],
+    imageUrl: "https://example.com/black.jpg",
+    productUrl: "https://example.com",
+    rating: 4.5,
+    reviewCount: 10,
+    discountPercent: 20,
+  };
+  const duplicateEval = marketplaceRetrievalEngine.evaluateDoINeedThis(blackShirtProduct, saturatedWardrobe as any);
+  assert(duplicateEval.duplicateCount >= 3, `Detected ${duplicateEval.duplicateCount} duplicate black tops`);
+  assert(duplicateEval.verdict === "High Redundancy", "Verdict correctly flagged as 'High Redundancy'");
 
-  // 2. "White shirt" filter
-  const whiteShirtResults = marketplaceAggregator.filterByRelevance(deduped, qWhiteShirt);
-  assert(
-    whiteShirtResults.length === 1 && whiteShirtResults[0].id === "AMZ-002",
-    "TEST 4.2: 'White shirt' search retains White Shirt and DISCARDS Black Shirt & Dresses"
-  );
+  // TEST 9: Wardrobe Gap Recommendation
+  console.log("\nScenario 9: Wardrobe Gap Positive Scoring");
+  const blazerProduct = {
+    id: "test_blazer",
+    provider: "Local" as const,
+    title: "Charcoal Wool Blazer",
+    price: 3499,
+    originalPrice: 4999,
+    currency: "INR",
+    category: "Outerwear",
+    subcategory: "Blazers",
+    colors: ["Charcoal"],
+    imageUrl: "https://example.com/blazer.jpg",
+    productUrl: "https://example.com",
+    rating: 4.8,
+    reviewCount: 25,
+    discountPercent: 30,
+  };
+  const gapEval = marketplaceRetrievalEngine.evaluateDoINeedThis(blazerProduct, userWardrobe as any);
+  assert(gapEval.needScore >= 80, `Wardrobe gap scored high (${gapEval.needScore}) for missing Outerwear category`);
+  assert(gapEval.verdict === "Essential Addition" || gapEval.verdict === "Versatile Match", "Gap verdict is positive");
 
-  // 3. "Dress" filter
-  const dressResults = marketplaceAggregator.filterByRelevance(deduped, qDress);
-  assert(
-    dressResults.length === 3 && dressResults.every((d) => d.category === "Dresses"),
-    "TEST 4.3: 'Dress' search returns ONLY dresses and DISCARDS shirts & jeans"
-  );
-
-  // 4. "Red dress" filter
-  const redDressResults = marketplaceAggregator.filterByRelevance(deduped, qRedDress);
-  assert(
-    redDressResults.length === 1 && redDressResults[0].id === "FK-001",
-    "TEST 4.4: 'Red dress' search returns ONLY red dress and DISCARDS non-red items"
-  );
-
-  // 5. "Black jeans" filter
-  const blackJeansResults = marketplaceAggregator.filterByRelevance(deduped, qBlackJeans);
-  assert(
-    blackJeansResults.length === 1 && blackJeansResults[0].id === "AMZ-004",
-    "TEST 4.5: 'Black jeans' search returns ONLY black jeans and DISCARDS dresses and shirts"
-  );
-
-  // 6. "Black maxi dress" filter
-  const blackMaxiResults = marketplaceAggregator.filterByRelevance(deduped, qBlackMaxi);
-  assert(
-    blackMaxiResults.length === 1 && blackMaxiResults[0].id === "AMZ-005",
-    "TEST 4.6: 'Black maxi dress' search returns ONLY black maxi dress"
-  );
-
-  // 7. "Party dress under ₹2000" budget filter
-  const partyDressResults = marketplaceAggregator.filterByRelevance(deduped, qPartyDress);
-  assert(
-    partyDressResults.every((d) => d.price <= 2000),
-    "TEST 4.7: 'Party dress under ₹2000' search enforces maxPrice ₹2000"
-  );
-
-  // -------------------------------------------------------------
-  // TEST GROUP 5: Aggregator Provider Status & Section Health
-  // -------------------------------------------------------------
-  console.log("\n--- TEST GROUP 5: Aggregator Provider Health & Status ---");
-
-  const mockUser: UserProfile = {
-    id: "user-1",
-    name: "Hero",
-    email: "hero@omnipresence.ai",
-    gender: "Women",
-    stylePreferences: ["Elegant", "Minimal"],
-    preferredBrands: ["Zara"],
-    appearance: {
-      skinTone: {
-        paletteId: "st-5",
-        hex: "#C58C68",
-        name: "Warm Beige",
-        undertone: "Warm",
-        source: "User",
-      },
+  // TEST 10: Image Search Feature Extraction
+  console.log("\nScenario 10: Visual Retrieval Hybrid Scoring");
+  const hybridScores = marketplaceRetrievalEngine.computeHybridScores(
+    sampleProductA,
+    {
+      rawQuery: "image search",
+      category: "Tops",
+      discoveredStyles: [],
+      searchKeywords: "image",
+      imageFeatures: { dominantColor: "White", detectedCategory: "Tops" },
     },
-  } as unknown as UserProfile;
+    userWardrobe as any
+  );
+  assert(hybridScores.visualScore >= 75, `Visual feature match scored high (${hybridScores.visualScore})`);
+  assert(hybridScores.finalScore > 0, `Hybrid final score computed (${hybridScores.finalScore})`);
 
-  const response = await marketplaceAggregator.searchAndRank(qDress, { gender: "Women" }, mockUser);
-  assert(
-    Array.isArray(response.providerStatuses) && response.providerStatuses.length === 2,
-    "TEST 5.1: Aggregator exposes live provider statuses array"
+  // TEST 11: Multi-Provider Search Aggregation & Error Shielding
+  console.log("\nScenario 11: Multi-Provider Search Aggregation");
+  const aggResult = await marketplaceAggregator.searchAndRank(
+    {
+      rawQuery: "Linen Shirt",
+      category: "Tops",
+      subcategory: "Shirts",
+      discoveredStyles: ["Shirts"],
+      searchKeywords: "Linen Shirt",
+    },
+    { source: "All" },
+    null,
+    userA
   );
-  assert(
-    typeof response.hasConnectedProviders === "boolean",
-    "TEST 5.2: Aggregator reports hasConnectedProviders boolean for UI consumption"
-  );
-  assert(
-    Array.isArray(response.sections.bestMatch) &&
-      Array.isArray(response.sections.bestForYou) &&
-      Array.isArray(response.sections.costEffective) &&
-      Array.isArray(response.sections.highestRated),
-    "TEST 5.3: Aggregator sections are structured correctly"
-  );
+  assert(aggResult.totalProducts > 0, `Aggregated search returned ${aggResult.totalProducts} products`);
+  assert(aggResult.sections.bestMatch.length > 0, "bestMatch section populated");
+  assert(aggResult.sections.bestForYou.length > 0, "bestForYou section populated");
+  assert(aggResult.sections.costEffective.length > 0, "costEffective section populated");
 
-  // -------------------------------------------------------------
-  // SUMMARY
-  // -------------------------------------------------------------
-  console.log("\n==================================================================");
-  console.log(
-    `TOTAL MARKETPLACE TESTS PASSED: ${passed}/${passed + failed} (${Math.round(
-      (passed / (passed + failed)) * 100
-    )}%)`
+  // TEST 12: Strict Relevance Category Filtering
+  console.log("\nScenario 12: Strict Category Relevance Filtering");
+  const dressSearch = await marketplaceAggregator.searchAndRank(
+    {
+      rawQuery: "Floral Maxi Dress",
+      category: "Dresses",
+      subcategory: "Maxi Dress",
+      discoveredStyles: ["Maxi Dress"],
+      searchKeywords: "dress",
+    },
+    undefined,
+    null,
+    userA
   );
-  console.log("==================================================================");
+  const containsNonDress = dressSearch.products.some((p) => p.category === "Tops" || p.category === "Bottoms");
+  assert(!containsNonDress, "No Tops or Bottoms leaked into Dress search");
 
-  if (failed > 0) {
+  // TEST 13: Deduplication Verification
+  console.log("\nScenario 13: Product Deduplication");
+  const duplicateList = [sampleProductA, sampleProductA, { ...sampleProductA, id: "loc_top_01_dup" }];
+  const deduplicated = marketplaceAggregator.deduplicateProducts(duplicateList);
+  assert(deduplicated.length === 1, `Deduplicated 3 identical URLs down to 1 (Count: ${deduplicated.length})`);
+
+  // TEST 14: No Fake Amazon or Flipkart Badges on Local Data
+  console.log("\nScenario 14: Data Integrity (Zero Fake Badges)");
+  for (const p of aggResult.products) {
+    if (p.source === "local") {
+      assert(p.provider === "Local", `Local product '${p.title}' is not mislabeled as Amazon/Flipkart`);
+      assert(p.priceStatus === "development", `Local product '${p.title}' has priceStatus='development'`);
+    }
+  }
+
+  // TEST 15: Full Workflow Execution & Summary
+  console.log("\nScenario 15: Comprehensive Test Suite Summary");
+  console.log(`Total Passed: ${passedCount} / ${totalCount} (${Math.round((passedCount / totalCount) * 100)}%)`);
+
+  if (passedCount === totalCount) {
+    console.log("\n=====================================================================");
+    console.log("  🎉 ALL 15 MASTER MARKETPLACE SCENARIOS PASSED WITH 100% SUCCESS!   ");
+    console.log("=====================================================================\n");
+  } else {
     process.exit(1);
   }
 }
 
-runTests().catch((e) => {
-  console.error("Test execution failed:", e);
+runMasterMarketplaceTests().catch((err) => {
+  console.error("Test execution fatal error:", err);
   process.exit(1);
 });

@@ -37,32 +37,53 @@ export function notifyDataChange(entity: string, userId?: string) {
 }
 
 export class AppStorage {
-  private static isClient(): boolean {
+  public static isClient(): boolean {
     return typeof window !== "undefined";
+  }
+
+  private static memoryStore: Map<string, string> = new Map();
+
+  private static getItem(key: string): string | null {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return this.memoryStore.get(key) || null;
+      }
+    }
+    return this.memoryStore.get(key) || null;
+  }
+
+  private static setItem(key: string, value: string): void {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        localStorage.setItem(key, value);
+      } catch {}
+    }
+    this.memoryStore.set(key, value);
+  }
+
+  private static removeItem(key: string): void {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        localStorage.removeItem(key);
+      } catch {}
+    }
+    this.memoryStore.delete(key);
   }
 
   // Active Authenticated User ID
   public static getActiveUserId(): string | null {
-    if (!this.isClient()) return null;
-    try {
-      return localStorage.getItem(STORAGE_KEYS.ACTIVE_USER_ID);
-    } catch {
-      return null;
-    }
+    return this.getItem(STORAGE_KEYS.ACTIVE_USER_ID);
   }
 
   public static setActiveUserId(userId: string | null): void {
-    if (!this.isClient()) return;
-    try {
-      if (userId) {
-        localStorage.setItem(STORAGE_KEYS.ACTIVE_USER_ID, userId);
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.ACTIVE_USER_ID);
-      }
-      notifyDataChange("session");
-    } catch (e) {
-      console.error("Failed to set active user ID:", e);
+    if (userId) {
+      this.setItem(STORAGE_KEYS.ACTIVE_USER_ID, userId);
+    } else {
+      this.removeItem(STORAGE_KEYS.ACTIVE_USER_ID);
     }
+    notifyDataChange("session");
   }
 
   // Registered Users Registry
@@ -489,4 +510,55 @@ export class AppStorage {
       return false;
     }
   }
+
+  // User-Isolated Saved Marketplace Products
+  public static getSavedProducts(userId: string): any[] {
+    if (!userId) return [];
+    try {
+      const data = this.getItem(`op_saved_products_${userId}`);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  public static saveMarketplaceProduct(userId: string, product: any): void {
+    if (!userId || !product) return;
+    try {
+      const existing = this.getSavedProducts(userId);
+      const isAlreadySaved = existing.some((p) => (p.product?.id || p.id) === product.id);
+      if (!isAlreadySaved) {
+        const item = {
+          id: `saved_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          userId,
+          product,
+          savedAt: new Date().toISOString(),
+        };
+        existing.unshift(item);
+        this.setItem(`op_saved_products_${userId}`, JSON.stringify(existing));
+        notifyDataChange("savedProducts", userId);
+      }
+    } catch (e) {
+      console.error("Failed to save marketplace product:", e);
+    }
+  }
+
+  public static removeSavedMarketplaceProduct(userId: string, productId: string): void {
+    if (!userId || !productId) return;
+    try {
+      const existing = this.getSavedProducts(userId);
+      const filtered = existing.filter((p) => (p.product?.id || p.id) !== productId);
+      this.setItem(`op_saved_products_${userId}`, JSON.stringify(filtered));
+      notifyDataChange("savedProducts", userId);
+    } catch (e) {
+      console.error("Failed to remove saved marketplace product:", e);
+    }
+  }
+
+  public static isProductSaved(userId: string, productId: string): boolean {
+    if (!userId || !productId) return false;
+    const existing = this.getSavedProducts(userId);
+    return existing.some((p) => (p.product?.id || p.id) === productId);
+  }
 }
+

@@ -1,14 +1,16 @@
 import {
+  MarketplaceProduct,
   MarketplaceSearchFilters,
   MarketplaceSearchResponse,
   MarketplaceProviderStatus,
   MarketplaceProviderTestResult,
+  SavedMarketplaceProduct,
 } from "@/types/marketplace";
 import { AppStorage } from "@/lib/storage";
 
 export const marketplaceService = {
   /**
-   * Searches marketplace products across Amazon & Flipkart with OP AI semantic understanding
+   * Searches marketplace products across Local Catalog, Amazon & Flipkart with OP AI hybrid retrieval
    */
   search: async (
     query: string,
@@ -64,6 +66,7 @@ export const marketplaceService = {
     results: {
       amazon: MarketplaceProviderTestResult;
       flipkart: MarketplaceProviderTestResult;
+      local?: MarketplaceProviderTestResult;
     };
   }> => {
     const res = await fetch("/api/v1/marketplace/providers/test", {
@@ -74,5 +77,28 @@ export const marketplaceService = {
     }
     const json = await res.json();
     return json.data;
+  },
+
+  /**
+   * User-Isolated Saved Marketplace Products
+   */
+  getSavedProducts: (userId?: string): SavedMarketplaceProduct[] => {
+    const uid = userId || AppStorage.getActiveUserId() || "";
+    return AppStorage.getSavedProducts(uid);
+  },
+
+  saveProduct: (product: MarketplaceProduct, userId?: string): void => {
+    const uid = userId || AppStorage.getActiveUserId() || "";
+    AppStorage.saveMarketplaceProduct(uid, product);
+  },
+
+  removeSavedProduct: (productId: string, userId?: string): void => {
+    const uid = userId || AppStorage.getActiveUserId() || "";
+    AppStorage.removeSavedMarketplaceProduct(uid, productId);
+  },
+
+  isProductSaved: (productId: string, userId?: string): boolean => {
+    const uid = userId || AppStorage.getActiveUserId() || "";
+    return AppStorage.isProductSaved(uid, productId);
   },
 };

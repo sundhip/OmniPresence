@@ -5,12 +5,13 @@ import {
   MarketplaceProviderStatus,
   MarketplaceProviderTestResult,
   MarketplaceProviderHealthStatus,
+  MarketplaceProviderName,
 } from "@/types/marketplace";
 import { IMarketplaceProvider } from "./MarketplaceProvider";
 import { generateAwsSigV4Headers } from "./awsSigV4";
 
 export class AmazonMarketplaceProvider implements IMarketplaceProvider {
-  public readonly name = "Amazon" as const;
+  public readonly name: MarketplaceProviderName = "Amazon";
   private partnerTag: string;
   private accessKey: string;
   private secretKey: string;
@@ -18,8 +19,12 @@ export class AmazonMarketplaceProvider implements IMarketplaceProvider {
   private region: string;
 
   // Cached health status
-  private lastKnownStatus: MarketplaceProviderHealthStatus = "not_configured";
+  private lastKnownStatus: MarketplaceProviderHealthStatus = "DISABLED";
   private lastCheckedTimestamp: string | null = null;
+
+  public get status(): MarketplaceProviderHealthStatus {
+    return this.isConfigured() ? "ACTIVE" : "DISABLED";
+  }
 
   constructor() {
     this.partnerTag = process.env.AMAZON_PARTNER_TAG || "";
@@ -31,7 +36,7 @@ export class AmazonMarketplaceProvider implements IMarketplaceProvider {
       (this.host.includes(".in") ? "eu-west-1" : "us-east-1");
 
     if (this.isConfigured()) {
-      this.lastKnownStatus = "healthy";
+      this.lastKnownStatus = "ACTIVE";
     }
   }
 

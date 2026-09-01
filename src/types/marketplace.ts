@@ -1,36 +1,86 @@
-export type MarketplaceProviderName = "Amazon" | "Flipkart";
+export type MarketplaceProviderName = "Local" | "Amazon" | "Flipkart";
 
 export type MarketplaceProviderHealthStatus =
+  | "ACTIVE"
+  | "DISABLED"
+  | "UNAVAILABLE"
+  | "ERROR"
   | "healthy"
   | "not_configured"
   | "credentials_invalid"
   | "rate_limited"
   | "temporarily_unavailable";
 
+export type ProductAvailability =
+  | "in_stock"
+  | "low_stock"
+  | "out_of_stock"
+  | "unknown"
+  | "In Stock"
+  | "Low Stock"
+  | "Out of Stock"
+  | "Available";
+
+export type PriceStatus = "live" | "cached" | "development";
+
 export interface MarketplaceProduct {
   id: string;
   provider: MarketplaceProviderName;
+  providerProductId?: string;
   title: string;
+  description?: string;
   brand: string | null;
   imageUrl: string;
+  additionalImages?: string[];
   productUrl: string;
+  affiliateUrl?: string;
   price: number;
   originalPrice: number | null;
   currency: string;
   discountPercent: number | null;
+  discountPercentage?: number | null;
+  priceStatus?: PriceStatus;
   rating: number | null;
   reviewCount: number | null;
+  availability?: ProductAvailability | null;
   category: string;
   subcategory?: string | null;
-  style?: string | null;
-  gender?: "Women" | "Men" | "Unisex" | "All" | null;
   colors?: string[];
-  availability?: "In Stock" | "Low Stock" | "Out of Stock" | "Available" | null;
+  sizes?: string[];
+  material?: string | null;
+  pattern?: string | null;
+  fit?: string | null;
+  style?: string | null;
+  occasion?: string | null;
+  season?: string | null;
+  gender?: "Women" | "Men" | "Unisex" | "All" | null;
+  source?: "local" | "amazon" | "flipkart";
   deliveryInformation?: string | null;
   isBestSeller?: boolean;
   relevanceScore?: number;
   personalizedScore?: number;
   features?: string[];
+  metadata?: Record<string, any>;
+  embedding?: number[];
+  fashionEmbedding?: number[];
+  confidence?: number;
+  lastUpdated?: string;
+
+  // AI Recommendation & Wardrobe Synthesis
+  wardrobeCompatibilityScore?: number;
+  needScore?: number;
+  needVerdict?: "Essential Addition" | "Versatile Match" | "High Redundancy" | "Budget Alert";
+  recommendationReason?: string;
+  scores?: {
+    semanticScore?: number;
+    visualScore?: number;
+    wardrobeScore?: number;
+    preferenceScore?: number;
+    occasionScore?: number;
+    budgetScore?: number;
+    duplicatePenalty?: number;
+    finalScore?: number;
+  };
 }
 
 export interface FashionParsedQuery {
@@ -40,6 +90,7 @@ export interface FashionParsedQuery {
   style?: string;
   color?: string;
   pattern?: string;
+  fit?: string;
   occasion?: string;
   season?: string;
   gender?: "Women" | "Men" | "Unisex" | "All";
@@ -50,10 +101,16 @@ export interface FashionParsedQuery {
   comfortPriority?: boolean;
   discoveredStyles: string[];
   searchKeywords: string;
+  imageSearch?: boolean;
+  imageFeatures?: {
+    dominantColor?: string;
+    detectedCategory?: string;
+    detectedFit?: string;
+  };
 }
 
 export interface MarketplaceSearchFilters {
-  source?: "All" | "Amazon" | "Flipkart";
+  source?: "All" | "Local" | "Amazon" | "Flipkart";
   gender?: "Women" | "Men" | "All";
   minPrice?: number;
   maxPrice?: number;
@@ -61,7 +118,9 @@ export interface MarketplaceSearchFilters {
   selectedStyles?: string[];
   selectedColors?: string[];
   selectedBrands?: string[];
-  sortBy?: "best_match" | "best_for_you" | "price_low" | "price_high" | "rating";
+  selectedFits?: string[];
+  selectedOccasions?: string[];
+  sortBy?: "best_match" | "best_for_you" | "price_low" | "price_high" | "rating" | "wardrobe_match";
 }
 
 export interface MarketplaceProviderStatus {
@@ -115,4 +174,11 @@ export interface MarketplaceSearchResponse {
   };
   providerStatuses: MarketplaceProviderStatus[];
   hasConnectedProviders: boolean;
+}
+
+export interface SavedMarketplaceProduct {
+  id: string;
+  userId: string;
+  product: MarketplaceProduct;
+  savedAt: string;
 }

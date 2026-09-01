@@ -5,17 +5,22 @@ import {
   MarketplaceProviderStatus,
   MarketplaceProviderTestResult,
   MarketplaceProviderHealthStatus,
+  MarketplaceProviderName,
 } from "@/types/marketplace";
 import { IMarketplaceProvider } from "./MarketplaceProvider";
 
 export class FlipkartMarketplaceProvider implements IMarketplaceProvider {
-  public readonly name = "Flipkart" as const;
+  public readonly name: MarketplaceProviderName = "Flipkart";
   private affiliateId: string;
   private affiliateToken: string;
 
   // Cached health status
-  private lastKnownStatus: MarketplaceProviderHealthStatus = "not_configured";
+  private lastKnownStatus: MarketplaceProviderHealthStatus = "DISABLED";
   private lastCheckedTimestamp: string | null = null;
+
+  public get status(): MarketplaceProviderHealthStatus {
+    return this.isConfigured() ? "ACTIVE" : "DISABLED";
+  }
 
   constructor() {
     this.affiliateId =
@@ -24,7 +29,7 @@ export class FlipkartMarketplaceProvider implements IMarketplaceProvider {
       process.env.FLIPKART_AFFILIATE_TOKEN || process.env.FLIPKART_API_SECRET || "";
 
     if (this.isConfigured()) {
-      this.lastKnownStatus = "healthy";
+      this.lastKnownStatus = "ACTIVE";
     }
   }
 

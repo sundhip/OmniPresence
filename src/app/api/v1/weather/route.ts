@@ -145,7 +145,7 @@ export async function GET(req: Request) {
         url = `https://api.openweathermap.org/data/2.5/weather?q=${cityQuery}&units=metric&appid=${apiKey}`;
       }
 
-      const res = await fetch(url, { next: { revalidate: 600 } });
+      const res = await fetch(url, { next: { revalidate: 600 } } as any);
       if (res.ok) {
         const data = await res.json();
         const condition = mapOpenWeatherCondition(

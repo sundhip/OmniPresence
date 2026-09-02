@@ -36,12 +36,24 @@ export class SerpApiProvider implements IMarketplaceProvider {
     }
   }
 
+  private getApiKey(): string {
+    return (
+      process.env.SERPAPI_API_KEY ||
+      process.env.SERP_API_KEY ||
+      process.env.SERPAPI_KEY ||
+      this.apiKey ||
+      ""
+    ).trim();
+  }
+
   public isConfigured(): boolean {
-    return Boolean(this.apiKey && this.apiKey.trim().length > 0);
+    const key = this.getApiKey();
+    return Boolean(key && key.length > 0);
   }
 
   public getStatus(): MarketplaceProviderStatus {
     const configured = this.isConfigured();
+    const activeKey = this.getApiKey();
     let status: MarketplaceProviderHealthStatus = configured
       ? this.lastKnownStatus === "not_configured"
         ? "healthy"
@@ -72,14 +84,15 @@ export class SerpApiProvider implements IMarketplaceProvider {
       details: {
         region: this.country,
         apiKeyMasked: configured
-          ? `${this.apiKey.slice(0, 4)}...${this.apiKey.slice(-4)}`
+          ? `${activeKey.slice(0, 4)}...${activeKey.slice(-4)}`
           : undefined,
       },
     };
   }
 
   public async testConnection(): Promise<MarketplaceProviderTestResult> {
-    if (!this.isConfigured()) {
+    const activeKey = this.getApiKey();
+    if (!activeKey) {
       return {
         provider: this.name,
         passed: false,
@@ -95,7 +108,7 @@ export class SerpApiProvider implements IMarketplaceProvider {
       const url = new URL("https://serpapi.com/search.json");
       url.searchParams.set("engine", "google_shopping");
       url.searchParams.set("q", "linen shirt");
-      url.searchParams.set("api_key", this.apiKey);
+      url.searchParams.set("api_key", activeKey);
       url.searchParams.set("gl", this.country);
       url.searchParams.set("hl", this.language);
       url.searchParams.set("num", "3");
@@ -175,14 +188,17 @@ export class SerpApiProvider implements IMarketplaceProvider {
     filters?: MarketplaceSearchFilters,
     signal?: AbortSignal
   ): Promise<MarketplaceProduct[]> {
-    if (!this.isConfigured()) {
+    const activeKey = this.getApiKey();
+    if (!activeKey) {
       return [];
     }
 
-    // 1. Build optimized search query keywords
+    const effectiveGender = filters?.gender || query.gender;
+
+    // 1. Build optimized search query keywords for Google Shopping
     const searchTerms: string[] = [];
-    if (query.gender && query.gender !== "All" && query.gender !== "Unisex") {
-      searchTerms.push(query.gender);
+    if (effectiveGender && effectiveGender !== "All" && effectiveGender !== "Unisex") {
+      searchTerms.push(effectiveGender);
     }
     if (query.color) {
       searchTerms.push(query.color);
@@ -192,7 +208,8 @@ export class SerpApiProvider implements IMarketplaceProvider {
     }
     if (query.style && !searchTerms.some((t) => t.toLowerCase() === query.style?.toLowerCase())) {
       searchTerms.push(query.style);
-    } else if (query.subcategory) {
+    }
+    if (query.subcategory) {
       searchTerms.push(query.subcategory);
     } else if (query.category) {
       searchTerms.push(query.category);
@@ -205,19 +222,23 @@ export class SerpApiProvider implements IMarketplaceProvider {
     }
 
     // Clean price tokens from the query string so Google Shopping searches products cleanly
-    finalQuery = finalQuery.replace(/(?:under|below|less than|within|₹|rs\.?)\s*\d+/gi, "").trim();
+    finalQuery = finalQuery
+      .replace(/(?:under|below|less than|within|₹|rs\.?)\s*\d+/gi, "")
+      .replace(/outfit/gi, "clothing")
+      .trim();
+
     if (!finalQuery) {
-      finalQuery = query.rawQuery || "clothing";
+      finalQuery = query.rawQuery || "fashion clothing";
     }
 
     try {
       const url = new URL("https://serpapi.com/search.json");
       url.searchParams.set("engine", "google_shopping");
       url.searchParams.set("q", finalQuery);
-      url.searchParams.set("api_key", this.apiKey);
+      url.searchParams.set("api_key", activeKey);
       url.searchParams.set("gl", this.country);
       url.searchParams.set("hl", this.language);
-      url.searchParams.set("num", "35");
+      url.searchParams.set("num", "40");
 
       if (filters?.sortBy === "price_low") {
         url.searchParams.set("tbs", "p_ord:p");
@@ -285,11 +306,17 @@ export class SerpApiProvider implements IMarketplaceProvider {
           brand: this.extractBrand(rawTitle, rawSource),
           store: rawSource,
           merchant: rawSource,
-          imageUrl: item.thumbnail || item.image || "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=600&auto=format&fit=crop&q=80",
-          productUrl: item.link || item.product_link || `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(rawTitle)}`,
+          imageUrl:
+            item.thumbnail ||
+            item.image ||
+            "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=600&auto=format&fit=crop&q=80",
+          productUrl:
+            item.link ||
+            item.product_link ||
+            `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(rawTitle)}`,
           price: price || 999,
           originalPrice: oldPrice || null,
-          currency: (item.price && item.price.includes("$")) ? "USD" : "INR",
+          currency: item.price && item.price.includes("$") ? "USD" : "INR",
           discountPercent,
           discountPercentage: discountPercent,
           priceStatus: "live",
@@ -304,7 +331,7 @@ export class SerpApiProvider implements IMarketplaceProvider {
           style: query.style || "Casual",
           occasion: query.occasion || "Everyday",
           season: query.season || "All-Season",
-          gender: query.gender || "All",
+          gender: (effectiveGender === "Men" || effectiveGender === "Women") ? effectiveGender : (query.gender || "All"),
           source: rawSource,
           deliveryInformation: deliveryInfo,
           isBestSeller: Boolean(item.tag && item.tag.toLowerCase().includes("best")),
@@ -364,7 +391,7 @@ export class SerpApiProvider implements IMarketplaceProvider {
 
   private inferCategory(title: string, defaultCat?: string): string {
     const t = title.toLowerCase();
-    if (/\b(kurta|kurti|saree|sari|lehenga|salwar|sherwani|dhoti|pajama|pyjama)\b/i.test(t)) {
+    if (/\b(kurta|kurti|saree|sari|lehenga|salwar|sherwani|dhoti|pajama|pyjama|anarkali|nehru|bandhgala|sharara)\b/i.test(t)) {
       return "Ethnic Wear";
     }
     if (/\b(shirt|t-shirt|tee|polo|blouse|sweater|hoodie|sweatshirt|top|tops|cardigan)\b/i.test(t)) {
@@ -373,16 +400,16 @@ export class SerpApiProvider implements IMarketplaceProvider {
     if (/\b(jeans|pant|pants|trouser|trousers|chino|chinos|short|shorts|skirt|bottom|bottoms|jogger|joggers|cargo)\b/i.test(t)) {
       return "Bottoms";
     }
-    if (/\b(dress|gown|maxi|midi|mini|frock|jumpsuit)\b/i.test(t)) {
+    if (/\b(dress|gown|maxi|midi|mini|frock|jumpsuit|sundress)\b/i.test(t)) {
       return "Dresses";
     }
     if (/\b(blazer|coat|jacket|overcoat|trench|bomber)\b/i.test(t)) {
       return "Outerwear";
     }
-    if (/\b(shoe|shoes|sneaker|sneakers|boot|boots|sandal|sandals|loafer|loafers|heel|heels|flat|flats)\b/i.test(t)) {
+    if (/\b(shoe|shoes|sneaker|sneakers|boot|boots|sandal|sandals|loafer|loafers|heel|heels|flat|flats|jutti|mojari)\b/i.test(t)) {
       return "Footwear";
     }
-    if (/\b(bag|watch|belt|sunglasses|jewellery|jewelry|cap|hat|scarf)\b/i.test(t)) {
+    if (/\b(bag|watch|belt|sunglasses|jewellery|jewelry|cap|hat|scarf|tote)\b/i.test(t)) {
       return "Accessories";
     }
     return defaultCat || "Tops";
@@ -390,9 +417,9 @@ export class SerpApiProvider implements IMarketplaceProvider {
 
   private extractColors(title: string, queryColor?: string): string[] {
     const colors = [
-      "black", "white", "blue", "navy", "red", "maroon", "green", "olive",
+      "black", "white", "blue", "navy", "red", "maroon", "green", "olive", "emerald",
       "yellow", "mustard", "beige", "tan", "brown", "grey", "gray",
-      "pink", "purple", "orange", "burgundy", "charcoal", "cream", "gold", "silver"
+      "pink", "purple", "orange", "burgundy", "charcoal", "cream", "gold", "silver", "mint"
     ];
     const t = title.toLowerCase();
     const found: string[] = [];

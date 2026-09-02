@@ -90,62 +90,83 @@ export class MarketplaceAggregator {
 
       // 3. Category Relevance
       if (targetCategory === "ethnic wear" || targetCategory === "traditional") {
-        const hasEthnicSignal =
-          titleLower.includes("kurta") ||
-          titleLower.includes("kurti") ||
-          titleLower.includes("saree") ||
-          titleLower.includes("lehenga") ||
-          titleLower.includes("sherwani") ||
-          titleLower.includes("dhoti") ||
-          titleLower.includes("ethnic") ||
-          pCatLower.includes("ethnic");
-        if (!hasEthnicSignal) return false;
+        if (pCatLower !== "ethnic wear" && pCatLower !== "traditional") {
+          const hasEthnicSignal =
+            titleLower.includes("kurta") ||
+            titleLower.includes("kurti") ||
+            titleLower.includes("saree") ||
+            titleLower.includes("lehenga") ||
+            titleLower.includes("sherwani") ||
+            titleLower.includes("dhoti") ||
+            titleLower.includes("anarkali") ||
+            titleLower.includes("nehru");
+          if (!hasEthnicSignal) return false;
+        }
       } else if (targetCategory === "dresses") {
-        const hasDressSignal =
-          titleLower.includes("dress") ||
-          titleLower.includes("gown") ||
-          titleLower.includes("maxi") ||
-          titleLower.includes("midi") ||
-          titleLower.includes("frock") ||
-          titleLower.includes("sundress") ||
-          titleLower.includes("jumpsuit") ||
-          pCatLower.includes("dress");
-        if (!hasDressSignal && pCatLower !== "dresses") return false;
+        if (pCatLower === "tops" || pCatLower === "bottoms" || pCatLower === "outerwear" || pCatLower === "footwear") {
+          return false;
+        }
+        if (pCatLower !== "dresses") {
+          const hasDressSignal =
+            (titleLower.includes("dress") && !titleLower.includes("dress shirt")) ||
+            titleLower.includes("gown") ||
+            titleLower.includes("maxi") ||
+            titleLower.includes("sundress") ||
+            titleLower.includes("frock");
+          if (!hasDressSignal) return false;
+        }
       } else if (targetCategory === "tops") {
-        const hasTopSignal =
-          titleLower.includes("shirt") ||
-          titleLower.includes("tee") ||
-          titleLower.includes("t-shirt") ||
-          titleLower.includes("polo") ||
-          titleLower.includes("blouse") ||
-          titleLower.includes("top") ||
-          titleLower.includes("sweater") ||
-          titleLower.includes("hoodie") ||
-          titleLower.includes("cardigan") ||
-          pCatLower.includes("top");
-        if (!hasTopSignal) return false;
+        if (pCatLower === "dresses" || pCatLower === "bottoms" || pCatLower === "footwear") {
+          return false;
+        }
+        if (pCatLower !== "tops") {
+          const hasTopSignal =
+            titleLower.includes("shirt") ||
+            titleLower.includes("tee") ||
+            titleLower.includes("t-shirt") ||
+            titleLower.includes("polo") ||
+            titleLower.includes("blouse") ||
+            titleLower.includes("sweater") ||
+            titleLower.includes("hoodie");
+          if (!hasTopSignal) return false;
+        }
       } else if (targetCategory === "bottoms") {
-        const hasBottomSignal =
-          titleLower.includes("jean") ||
-          titleLower.includes("pant") ||
-          titleLower.includes("trouser") ||
-          titleLower.includes("chino") ||
-          titleLower.includes("short") ||
-          titleLower.includes("skirt") ||
-          titleLower.includes("jogger") ||
-          titleLower.includes("cargo") ||
-          pCatLower.includes("bottom");
-        if (!hasBottomSignal) return false;
+        if (pCatLower === "tops" || pCatLower === "dresses" || pCatLower === "outerwear" || pCatLower === "footwear") {
+          return false;
+        }
+        if (pCatLower !== "bottoms") {
+          const hasBottomSignal =
+            titleLower.includes("jean") ||
+            titleLower.includes("pant") ||
+            titleLower.includes("trouser") ||
+            titleLower.includes("chino") ||
+            titleLower.includes("cargo") ||
+            titleLower.includes("skirt");
+          if (!hasBottomSignal) return false;
+        }
       } else if (targetCategory === "outerwear") {
-        const hasOuterSignal =
-          titleLower.includes("blazer") ||
-          titleLower.includes("coat") ||
-          titleLower.includes("jacket") ||
-          titleLower.includes("overcoat") ||
-          titleLower.includes("trench") ||
-          titleLower.includes("bomber") ||
-          pCatLower.includes("outerwear");
-        if (!hasOuterSignal) return false;
+        if (pCatLower === "dresses" || pCatLower === "bottoms" || pCatLower === "footwear") {
+          return false;
+        }
+        if (pCatLower !== "outerwear") {
+          const hasOuterSignal =
+            titleLower.includes("blazer") ||
+            titleLower.includes("coat") ||
+            titleLower.includes("jacket") ||
+            titleLower.includes("trench");
+          if (!hasOuterSignal) return false;
+        }
+      } else if (targetCategory === "footwear") {
+        if (pCatLower !== "footwear") {
+          const hasFootSignal =
+            titleLower.includes("shoe") ||
+            titleLower.includes("sneaker") ||
+            titleLower.includes("loafer") ||
+            titleLower.includes("sandal") ||
+            titleLower.includes("heel") ||
+            titleLower.includes("jutti");
+          if (!hasFootSignal) return false;
+        }
       }
 
       // 4. Color Relevance

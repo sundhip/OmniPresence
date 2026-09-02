@@ -10,11 +10,15 @@ import { AppStorage } from "@/lib/storage";
 
 export const marketplaceService = {
   /**
-   * Searches marketplace products across Local Catalog, Amazon & Flipkart with OP AI hybrid retrieval
+   * Searches marketplace products across SerpApi Google Shopping, Amazon & Flipkart with OP AI hybrid retrieval
    */
   search: async (
     query: string,
     filters?: MarketplaceSearchFilters,
+    context?: {
+      upcomingEvents?: any[];
+      weather?: any;
+    },
     signal?: AbortSignal
   ): Promise<MarketplaceSearchResponse> => {
     const activeUserId = AppStorage.getActiveUserId();
@@ -26,6 +30,7 @@ export const marketplaceService = {
         query,
         filters,
         userId: activeUserId,
+        context,
       }),
       signal,
     });
@@ -64,6 +69,7 @@ export const marketplaceService = {
     summary: string;
     anyConnected: boolean;
     results: {
+      serpApi?: MarketplaceProviderTestResult;
       amazon: MarketplaceProviderTestResult;
       flipkart: MarketplaceProviderTestResult;
       local?: MarketplaceProviderTestResult;

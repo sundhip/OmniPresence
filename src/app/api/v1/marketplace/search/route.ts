@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
       query: rawQuery = "",
       filters = {} as MarketplaceSearchFilters,
       userId,
+      context,
     } = body;
 
     // Fetch user profile for personalized "Best For You" ranking and default gender
@@ -34,7 +35,8 @@ export async function POST(req: NextRequest) {
       parsedQuery,
       filters,
       userProfile,
-      userId
+      userId,
+      context
     );
 
     return NextResponse.json({

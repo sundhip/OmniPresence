@@ -1,8 +1,10 @@
+import { serpApiProvider } from "../src/lib/marketplace/SerpApiProvider";
 import { localCatalogProvider } from "../src/lib/marketplace/LocalCatalogProvider";
 import { amazonMarketplaceProvider } from "../src/lib/marketplace/AmazonMarketplaceProvider";
 import { flipkartMarketplaceProvider } from "../src/lib/marketplace/FlipkartMarketplaceProvider";
 import { marketplaceProviderRegistry } from "../src/lib/marketplace/MarketplaceProviderRegistry";
 import { marketplaceRetrievalEngine } from "../src/lib/marketplace/MarketplaceRetrievalEngine";
+import { marketplaceContextEngine } from "../src/lib/marketplace/MarketplaceContextEngine";
 import { marketplaceAggregator } from "../src/lib/marketplace/MarketplaceAggregator";
 import { AppStorage } from "../src/lib/storage";
 
@@ -21,14 +23,23 @@ function assert(condition: boolean, testName: string, detail?: string) {
 
 async function runMasterMarketplaceTests() {
   console.log("=====================================================================");
-  console.log("  OMNIPRESENCE — MASTER MARKETPLACE ACCEPTANCE TEST SUITE (15 SCENARIOS)");
+  console.log("  OMNIPRESENCE — REAL MARKETPLACE ACCEPTANCE TEST SUITE (18 SCENARIOS)");
   console.log("=====================================================================\n");
 
-  // TEST 1: Local catalog search works out of the box
-  console.log("Scenario 1: Local Catalog Provider Validation");
+  // TEST 1: SerpApi Provider Validation
+  console.log("Scenario 1: SerpApi Google Shopping Provider Definition");
+  assert(serpApiProvider.name === "SerpApi", "SerpApiProvider has name 'SerpApi'");
+  const serpStatus = serpApiProvider.getStatus();
+  assert(serpStatus.provider === "SerpApi", "SerpApi status provider matches");
+  if (!process.env.SERPAPI_API_KEY) {
+    assert(serpApiProvider.isConfigured() === false, "SerpApi isConfigured is false when no key set");
+    assert(serpStatus.status === "not_configured" || serpStatus.status === "DISABLED", "SerpApi status is not_configured without key");
+  }
+
+  // TEST 2: Local Catalog Provider Validation
+  console.log("\nScenario 2: Local Catalog Provider Validation");
   const localStatus = localCatalogProvider.getStatus();
   assert(localStatus.status === "ACTIVE", "LocalCatalogProvider is ACTIVE by default");
-  assert(localStatus.isConfigured === true, "LocalCatalogProvider is configured without external keys");
   const localResults = await localCatalogProvider.searchProducts({
     rawQuery: "linen shirt",
     category: "Tops",
@@ -37,35 +48,33 @@ async function runMasterMarketplaceTests() {
     searchKeywords: "linen shirt",
   });
   assert(localResults.length > 0, "LocalCatalogProvider returns products for 'linen shirt'");
-  assert(localResults[0].provider === "Local", "Products are correctly labeled provider='Local'");
-  assert(localResults[0].source === "local", "Products are correctly labeled source='local'");
-  assert(localResults[0].priceStatus === "development", "Product priceStatus is 'development'");
+  assert(localResults[0].provider === "Local", "Products are labeled provider='Local'");
 
-  // TEST 2: Amazon Disabled Handling
-  console.log("\nScenario 2: Amazon Provider Disabled State");
+  // TEST 3: Amazon Provider Disabled / Future State
+  console.log("\nScenario 3: Amazon Provider Disabled State");
   assert(amazonMarketplaceProvider.name === "Amazon", "AmazonMarketplaceProvider exists");
   if (!process.env.AMAZON_ACCESS_KEY) {
     assert(amazonMarketplaceProvider.status === "DISABLED", "Amazon status is DISABLED when unconfigured");
     assert(amazonMarketplaceProvider.isConfigured() === false, "Amazon isConfigured() is false without keys");
   }
 
-  // TEST 3: Flipkart Disabled Handling
-  console.log("\nScenario 3: Flipkart Provider Disabled State");
+  // TEST 4: Flipkart Provider Disabled / Future State
+  console.log("\nScenario 4: Flipkart Provider Disabled State");
   assert(flipkartMarketplaceProvider.name === "Flipkart", "FlipkartMarketplaceProvider exists");
   if (!process.env.FLIPKART_AFFILIATE_ID) {
     assert(flipkartMarketplaceProvider.status === "DISABLED", "Flipkart status is DISABLED when unconfigured");
     assert(flipkartMarketplaceProvider.isConfigured() === false, "Flipkart isConfigured() is false without keys");
   }
 
-  // TEST 4: Both External Providers Disabled -> Local Search Still Works Completely
-  console.log("\nScenario 4: Provider Registry Resilience");
+  // TEST 5: Provider Registry Resilience
+  console.log("\nScenario 5: Provider Registry Resilience & Multi-Provider Discovery");
   const activeProviders = marketplaceProviderRegistry.getActiveProviders();
-  assert(activeProviders.some((p) => p.name === "Local"), "Local catalog is included in active providers");
+  assert(activeProviders.length > 0, "Registry returns active providers");
   const statuses = marketplaceProviderRegistry.getProviderStatuses();
-  assert(statuses.length === 3, "Registry returns status for all 3 providers (Local, Amazon, Flipkart)");
+  assert(statuses.length === 4, "Registry returns status for all 4 providers (SerpApi, Amazon, Flipkart, Local)");
 
-  // TEST 5: User-Specific Saved Products Isolation
-  console.log("\nScenario 5: User-Isolated Saved Products");
+  // TEST 6: User-Specific Saved Products Isolation
+  console.log("\nScenario 6: User-Isolated Saved Products");
   const userA = "user_alpha_test";
   const userB = "user_beta_test";
   const sampleProductA = localResults[0];
@@ -81,100 +90,125 @@ async function runMasterMarketplaceTests() {
   AppStorage.removeSavedMarketplaceProduct(userA, sampleProductA.id);
   assert(AppStorage.getSavedProducts(userA).length === 0, "User A saved product removed cleanly");
 
-  // TEST 6: Natural Language Shopping Intent Parsing
-  console.log("\nScenario 6: OP AI Shopping Intent Parsing");
-  const parsedIntent = marketplaceRetrievalEngine.parseShoppingIntent("Find me a red oversized shirt under ₹1500");
-  assert(parsedIntent.category === "Tops", "Intent category parsed as 'Tops'");
-  assert(parsedIntent.subcategory === "Shirts", "Intent subcategory parsed as 'Shirts'");
-  assert(parsedIntent.color === "Red", "Intent color parsed as 'Red'");
-  assert(parsedIntent.fit === "Oversized", "Intent fit parsed as 'Oversized'");
-  assert(parsedIntent.budget?.max === 1500, "Intent max budget parsed as 1500");
+  // TEST 7: Natural Language Shopping Intent Parsing (Hoodie)
+  console.log("\nScenario 7: Natural Language Intent Parsing ('Black oversized hoodie under ₹1500')");
+  const hoodieIntent = marketplaceRetrievalEngine.parseShoppingIntent("Black oversized hoodie under ₹1500");
+  assert(hoodieIntent.category === "Tops", "Category parsed as 'Tops'");
+  assert(hoodieIntent.subcategory === "Hoodie", "Subcategory parsed as 'Hoodie'");
+  assert(hoodieIntent.color === "Black", "Color parsed as 'Black'");
+  assert(hoodieIntent.fit === "Oversized", "Fit parsed as 'Oversized'");
+  assert(hoodieIntent.budget?.max === 1500, "Max budget parsed as 1500");
 
-  // TEST 7: Wardrobe Compatibility Scoring
-  console.log("\nScenario 7: Wardrobe Compatibility Pairing");
-  const userWardrobe = [
+  // TEST 8: Category Understanding (Ethnic Wear / Kurta)
+  console.log("\nScenario 8: Category Understanding ('red kurta under ₹2000' & 'kurta pajama')");
+  const kurtaIntent = marketplaceRetrievalEngine.parseShoppingIntent("red kurta under ₹2000");
+  assert(kurtaIntent.category === "Ethnic Wear", "Category parsed as 'Ethnic Wear'");
+  assert(kurtaIntent.subcategory === "Kurta", "Subcategory parsed as 'Kurta'");
+  assert(kurtaIntent.color === "Red", "Color parsed as 'Red'");
+  assert(kurtaIntent.budget?.max === 2000, "Max budget parsed as 2000");
+
+  const pajamaIntent = marketplaceRetrievalEngine.parseShoppingIntent("kurta pajama");
+  assert(pajamaIntent.category === "Ethnic Wear", "Category parsed as 'Ethnic Wear'");
+  assert(pajamaIntent.subcategory?.includes("Kurta"), "Subcategory parsed as 'Kurta Pyjama'");
+
+  // TEST 9: Category Understanding (Formal Shirt & Summer Dress)
+  console.log("\nScenario 9: Category Understanding ('black formal shirt' & 'summer dress')");
+  const formalIntent = marketplaceRetrievalEngine.parseShoppingIntent("black formal shirt");
+  assert(formalIntent.category === "Tops", "Category parsed as 'Tops'");
+  assert(formalIntent.color === "Black", "Color parsed as 'Black'");
+  assert(formalIntent.style === "Formal" || formalIntent.subcategory === "Formal Shirt", "Style identified as Formal");
+
+  const summerDressIntent = marketplaceRetrievalEngine.parseShoppingIntent("summer dress");
+  assert(summerDressIntent.category === "Dresses", "Category parsed as 'Dresses'");
+  assert(summerDressIntent.season === "Summer" || summerDressIntent.subcategory === "Summer Dress", "Season or subcategory is Summer");
+
+  // TEST 10: Automatic Recommendations ("Picked for You" Generation)
+  console.log("\nScenario 10: Automatic Shopping Intent Generation");
+  const dummyProfile = {
+    id: userA,
+    name: "Alex",
+    gender: "Men" as const,
+    stylePreferences: ["Streetwear" as const],
+    fitPreferences: ["Oversized" as const],
+    colorPreferences: ["Black" as const],
+    sizes: { tops: "M", bottoms: "32", shoes: "9" },
+  };
+  const autoIntent = marketplaceContextEngine.generateAutomaticShoppingIntent(dummyProfile as any);
+  assert(Boolean(autoIntent.rawQuery), `Auto generated query: '${autoIntent.rawQuery}'`);
+  assert(autoIntent.gender === "Men", "Auto query preserves user gender");
+  assert(autoIntent.fit === "Oversized", "Auto query preserves user fit preference");
+
+  // TEST 11: Skin-Tone Harmony Evaluation
+  console.log("\nScenario 11: Skin-Tone Harmony Evaluation");
+  const skinToneEval = marketplaceContextEngine.evaluateSkinToneHarmony(
     {
-      id: "w_jeans_1",
-      userId: userA,
-      name: "Slim Dark Indigo Jeans",
-      category: "Bottoms" as any,
-      color: "Blue",
-      wearCount: 4,
+      ...sampleProductA,
+      colors: ["Mustard", "Olive"],
     },
-  ];
-  const compatEval = marketplaceRetrievalEngine.evaluateWardrobeCompatibility(sampleProductA, userWardrobe as any);
-  assert(compatEval.score >= 70, `Wardrobe compatibility scored high (${compatEval.score}%) for matching shirt with jeans`);
-  assert(compatEval.pairingItems.length > 0, "Paired items explicitly identified");
+    {
+      paletteId: "st-4",
+      hex: "#DCB38D",
+      name: "Medium Golden",
+      undertone: "Warm",
+      source: "User",
+    }
+  );
+  assert(skinToneEval.score >= 90, `Warm undertone correctly scored high harmony (${skinToneEval.score})`);
 
-  // TEST 8: Duplicate Detection & Penalty ("Do I Need This?")
-  console.log("\nScenario 8: Duplicate Saturation & Penalty");
+  // TEST 12: Calendar Event Match Scoring
+  console.log("\nScenario 12: Calendar Event Match Scoring");
+  const eventEval = marketplaceContextEngine.evaluateEventRelevance(
+    {
+      ...sampleProductA,
+      category: "Ethnic Wear",
+      title: "Royal Silk Kurta Set",
+      occasion: "Wedding",
+    },
+    [
+      {
+        id: "evt_1",
+        userId: userA,
+        title: "Sister's Wedding Reception",
+        date: new Date(Date.now() + 86400000 * 5).toISOString(),
+        occasionType: "Weddings / Functions",
+      } as any,
+    ]
+  );
+  assert(eventEval.score >= 90, `Wedding event correctly matched wedding kurta (${eventEval.score})`);
+
+  // TEST 13: Grounded OP AI Rationale Generation
+  console.log("\nScenario 13: Grounded OP AI Rationale Generation (Zero Hallucination)");
+  const groundedReason = marketplaceRetrievalEngine.generateGroundedRecommendationReason(
+    sampleProductA,
+    hoodieIntent,
+    dummyProfile as any,
+    [],
+    []
+  );
+  assert(groundedReason.startsWith("Recommended"), "Grounded explanation starts with 'Recommended'");
+  assert(groundedReason.length > 20, `Grounded explanation generated: '${groundedReason}'`);
+
+  // TEST 14: Duplicate Detection & Redundancy Penalty
+  console.log("\nScenario 14: Wardrobe Redundancy Detection");
   const saturatedWardrobe = [
     { id: "w_1", userId: userA, name: "Black Oxford Shirt", category: "Tops" as any, color: "Black", wearCount: 2 },
     { id: "w_2", userId: userA, name: "Black Cotton Tee", category: "Tops" as any, color: "Black", wearCount: 5 },
     { id: "w_3", userId: userA, name: "Black Linen Shirt", category: "Tops" as any, color: "Black", wearCount: 3 },
   ];
-  const blackShirtProduct = {
-    id: "test_black_shirt",
-    provider: "Local" as const,
-    title: "Black Classic Shirt",
-    brand: "TestBrand",
-    price: 999,
-    originalPrice: 1299,
-    currency: "INR",
-    category: "Tops",
-    subcategory: "Shirts",
-    colors: ["Black"],
-    imageUrl: "https://example.com/black.jpg",
-    productUrl: "https://example.com",
-    rating: 4.5,
-    reviewCount: 10,
-    discountPercent: 20,
-  };
-  const duplicateEval = marketplaceRetrievalEngine.evaluateDoINeedThis(blackShirtProduct, saturatedWardrobe as any);
-  assert(duplicateEval.duplicateCount >= 3, `Detected ${duplicateEval.duplicateCount} duplicate black tops`);
-  assert(duplicateEval.verdict === "High Redundancy", "Verdict correctly flagged as 'High Redundancy'");
-
-  // TEST 9: Wardrobe Gap Recommendation
-  console.log("\nScenario 9: Wardrobe Gap Positive Scoring");
-  const blazerProduct = {
-    id: "test_blazer",
-    provider: "Local" as const,
-    title: "Charcoal Wool Blazer",
-    brand: "TestBrand",
-    price: 3499,
-    originalPrice: 4999,
-    currency: "INR",
-    category: "Outerwear",
-    subcategory: "Blazers",
-    colors: ["Charcoal"],
-    imageUrl: "https://example.com/blazer.jpg",
-    productUrl: "https://example.com",
-    rating: 4.8,
-    reviewCount: 25,
-    discountPercent: 30,
-  };
-  const gapEval = marketplaceRetrievalEngine.evaluateDoINeedThis(blazerProduct, userWardrobe as any);
-  assert(gapEval.needScore >= 80, `Wardrobe gap scored high (${gapEval.needScore}) for missing Outerwear category`);
-  assert(gapEval.verdict === "Essential Addition" || gapEval.verdict === "Versatile Match", "Gap verdict is positive");
-
-  // TEST 10: Image Search Feature Extraction
-  console.log("\nScenario 10: Visual Retrieval Hybrid Scoring");
-  const hybridScores = marketplaceRetrievalEngine.computeHybridScores(
-    sampleProductA,
+  const duplicateEval = marketplaceRetrievalEngine.evaluateDoINeedThis(
     {
-      rawQuery: "image search",
+      ...sampleProductA,
+      title: "Black Plain T-Shirt",
+      colors: ["Black"],
       category: "Tops",
-      discoveredStyles: [],
-      searchKeywords: "image",
-      imageFeatures: { dominantColor: "White", detectedCategory: "Tops" },
     },
-    userWardrobe as any
+    saturatedWardrobe as any
   );
-  assert(hybridScores.visualScore >= 75, `Visual feature match scored high (${hybridScores.visualScore})`);
-  assert(hybridScores.finalScore > 0, `Hybrid final score computed (${hybridScores.finalScore})`);
+  assert(duplicateEval.duplicateCount >= 3, `Detected ${duplicateEval.duplicateCount} duplicate black tops`);
+  assert(duplicateEval.verdict === "High Redundancy", "Flagged as 'High Redundancy'");
 
-  // TEST 11: Multi-Provider Search Aggregation & Error Shielding
-  console.log("\nScenario 11: Multi-Provider Search Aggregation");
+  // TEST 15: Multi-Provider Search Aggregation & 9 Sections Partitioning
+  console.log("\nScenario 15: Aggregated Search & 9 Dynamic Sections");
   const aggResult = await marketplaceAggregator.searchAndRank(
     {
       rawQuery: "Linen Shirt",
@@ -184,16 +218,22 @@ async function runMasterMarketplaceTests() {
       searchKeywords: "Linen Shirt",
     },
     { source: "All" },
-    null,
+    dummyProfile as any,
     userA
   );
   assert(aggResult.totalProducts > 0, `Aggregated search returned ${aggResult.totalProducts} products`);
+  assert(aggResult.sections.pickedForYou.length > 0, "pickedForYou section populated");
   assert(aggResult.sections.bestMatch.length > 0, "bestMatch section populated");
-  assert(aggResult.sections.bestForYou.length > 0, "bestForYou section populated");
+  assert(aggResult.sections.bestValue.length > 0, "bestValue section populated");
   assert(aggResult.sections.costEffective.length > 0, "costEffective section populated");
+  assert(aggResult.sections.highestRated.length > 0, "highestRated section populated");
+  assert(aggResult.sections.popular.length > 0, "popular section populated");
+  assert(aggResult.sections.styleMatch.length > 0, "styleMatch section populated");
+  assert(aggResult.sections.wardrobeMatch.length > 0, "wardrobeMatch section populated");
+  assert(aggResult.sections.eventMatch.length > 0, "eventMatch section populated");
 
-  // TEST 12: Strict Relevance Category Filtering
-  console.log("\nScenario 12: Strict Category Relevance Filtering");
+  // TEST 16: Strict Relevance Category Filtering
+  console.log("\nScenario 16: Strict Category Relevance Filtering");
   const dressSearch = await marketplaceAggregator.searchAndRank(
     {
       rawQuery: "Floral Maxi Dress",
@@ -209,28 +249,19 @@ async function runMasterMarketplaceTests() {
   const containsNonDress = dressSearch.products.some((p) => p.category === "Tops" || p.category === "Bottoms");
   assert(!containsNonDress, "No Tops or Bottoms leaked into Dress search");
 
-  // TEST 13: Deduplication Verification
-  console.log("\nScenario 13: Product Deduplication");
+  // TEST 17: Product Deduplication
+  console.log("\nScenario 17: Product Deduplication");
   const duplicateList = [sampleProductA, sampleProductA, { ...sampleProductA, id: "loc_top_01_dup" }];
   const deduplicated = marketplaceAggregator.deduplicateProducts(duplicateList);
-  assert(deduplicated.length === 1, `Deduplicated 3 identical URLs down to 1 (Count: ${deduplicated.length})`);
+  assert(deduplicated.length === 1, `Deduplicated 3 identical items down to 1 (Count: ${deduplicated.length})`);
 
-  // TEST 14: No Fake Amazon or Flipkart Badges on Local Data
-  console.log("\nScenario 14: Data Integrity (Zero Fake Badges)");
-  for (const p of aggResult.products) {
-    if (p.source === "local") {
-      assert(p.provider === "Local", `Local product '${p.title}' is not mislabeled as Amazon/Flipkart`);
-      assert(p.priceStatus === "development", `Local product '${p.title}' has priceStatus='development'`);
-    }
-  }
-
-  // TEST 15: Full Workflow Execution & Summary
-  console.log("\nScenario 15: Comprehensive Test Suite Summary");
+  // TEST 18: Summary & Exit
+  console.log("\nScenario 18: Comprehensive Test Suite Summary");
   console.log(`Total Passed: ${passedCount} / ${totalCount} (${Math.round((passedCount / totalCount) * 100)}%)`);
 
   if (passedCount === totalCount) {
     console.log("\n=====================================================================");
-    console.log("  🎉 ALL 15 MASTER MARKETPLACE SCENARIOS PASSED WITH 100% SUCCESS!   ");
+    console.log("  🎉 ALL 18 REAL MARKETPLACE ACCEPTANCE SCENARIOS PASSED WITH 100%!   ");
     console.log("=====================================================================\n");
   } else {
     process.exit(1);

@@ -1,4 +1,9 @@
-export type MarketplaceProviderName = "Local" | "Amazon" | "Flipkart";
+export type MarketplaceProviderName =
+  | "SerpApi"
+  | "GoogleShopping"
+  | "Local"
+  | "Amazon"
+  | "Flipkart";
 
 export type MarketplaceProviderHealthStatus =
   | "ACTIVE"
@@ -30,6 +35,8 @@ export interface MarketplaceProduct {
   title: string;
   description?: string;
   brand: string | null;
+  store?: string | null;
+  merchant?: string | null;
   imageUrl: string;
   additionalImages?: string[];
   productUrl: string;
@@ -54,11 +61,13 @@ export interface MarketplaceProduct {
   occasion?: string | null;
   season?: string | null;
   gender?: "Women" | "Men" | "Unisex" | "All" | null;
-  source?: "local" | "amazon" | "flipkart";
+  source?: string;
   deliveryInformation?: string | null;
   isBestSeller?: boolean;
+  isPopular?: boolean;
   relevanceScore?: number;
   personalizedScore?: number;
+  recommendationBadge?: string;
   features?: string[];
   metadata?: Record<string, any>;
   embedding?: number[];
@@ -78,6 +87,7 @@ export interface MarketplaceProduct {
     preferenceScore?: number;
     occasionScore?: number;
     budgetScore?: number;
+    ratingScore?: number;
     duplicatePenalty?: number;
     finalScore?: number;
   };
@@ -110,7 +120,7 @@ export interface FashionParsedQuery {
 }
 
 export interface MarketplaceSearchFilters {
-  source?: "All" | "Local" | "Amazon" | "Flipkart";
+  source?: "All" | "SerpApi" | "GoogleShopping" | "Local" | "Amazon" | "Flipkart";
   gender?: "Women" | "Men" | "All";
   minPrice?: number;
   maxPrice?: number;
@@ -119,8 +129,18 @@ export interface MarketplaceSearchFilters {
   selectedColors?: string[];
   selectedBrands?: string[];
   selectedFits?: string[];
+  selectedSizes?: string[];
   selectedOccasions?: string[];
-  sortBy?: "best_match" | "best_for_you" | "price_low" | "price_high" | "rating" | "wardrobe_match";
+  selectedCategory?: string;
+  sortBy?:
+    | "recommended"
+    | "best_match"
+    | "best_for_you"
+    | "price_low"
+    | "price_high"
+    | "rating"
+    | "popular"
+    | "wardrobe_match";
 }
 
 export interface MarketplaceProviderStatus {
@@ -135,6 +155,7 @@ export interface MarketplaceProviderStatus {
     region?: string;
     partnerTagMasked?: string;
     affiliateIdMasked?: string;
+    apiKeyMasked?: string;
   };
 }
 
@@ -155,25 +176,37 @@ export interface MarketplaceProviderTestResult {
   errorMessage?: string;
 }
 
+export interface MarketplaceSections {
+  pickedForYou: MarketplaceProduct[];
+  bestMatch: MarketplaceProduct[];
+  bestValue: MarketplaceProduct[];
+  costEffective: MarketplaceProduct[];
+  highestRated: MarketplaceProduct[];
+  popular: MarketplaceProduct[];
+  styleMatch: MarketplaceProduct[];
+  wardrobeMatch: MarketplaceProduct[];
+  eventMatch: MarketplaceProduct[];
+}
+
 export interface MarketplaceSearchResponse {
   query: FashionParsedQuery;
   totalProducts: number;
   products: MarketplaceProduct[];
-  sections: {
-    bestMatch: MarketplaceProduct[];
-    bestForYou: MarketplaceProduct[];
-    costEffective: MarketplaceProduct[];
-    highestRated: MarketplaceProduct[];
-  };
+  sections: MarketplaceSections;
   discoveredStyles: string[];
   availableBrands: string[];
   availableColors: string[];
+  availableSizes?: string[];
+  availableFits?: string[];
+  availableCategories?: string[];
   priceRange: {
     min: number;
     max: number;
   };
   providerStatuses: MarketplaceProviderStatus[];
   hasConnectedProviders: boolean;
+  isFallback?: boolean;
+  fallbackMessage?: string;
 }
 
 export interface SavedMarketplaceProduct {
@@ -182,3 +215,4 @@ export interface SavedMarketplaceProduct {
   product: MarketplaceProduct;
   savedAt: string;
 }
+

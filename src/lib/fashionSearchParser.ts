@@ -51,13 +51,67 @@ const COLOR_KEYWORDS = [
   "orange",
   "cyan",
   "tan",
+  "charcoal",
+  "emerald",
+  "mustard",
+  "indigo",
+  "lavender",
+  "teal",
+  "coral",
+  "khaki",
+  "rust",
 ];
+
+const FIT_KEYWORDS: Record<string, string> = {
+  oversized: "Oversized",
+  baggy: "Oversized",
+  loose: "Oversized",
+  "drop shoulder": "Oversized",
+  "boxy": "Oversized",
+  slim: "Slim",
+  "slim-fit": "Slim",
+  "slim fit": "Slim",
+  skinny: "Slim",
+  fitted: "Slim",
+  tailored: "Tailored",
+  relaxed: "Relaxed",
+  "relaxed-fit": "Relaxed",
+  "relaxed fit": "Relaxed",
+  regular: "Regular",
+  "regular-fit": "Regular",
+  "regular fit": "Regular",
+  classic: "Regular",
+};
+
+const STYLE_KEYWORDS: Record<string, string> = {
+  formal: "Formal",
+  business: "Formal",
+  executive: "Formal",
+  casual: "Casual",
+  smart: "Smart Casual",
+  "smart casual": "Smart Casual",
+  streetwear: "Streetwear",
+  street: "Streetwear",
+  urban: "Streetwear",
+  minimal: "Minimal",
+  minimalist: "Minimal",
+  traditional: "Traditional",
+  ethnic: "Traditional",
+  sporty: "Sporty",
+  athletic: "Sporty",
+  vintage: "Vintage",
+  retro: "Vintage",
+  boho: "Bohemian",
+  bohemian: "Bohemian",
+  party: "Party",
+};
 
 const PATTERN_KEYWORDS: Record<string, string> = {
   floral: "Floral",
   flowers: "Floral",
   striped: "Striped",
   stripes: "Striped",
+  pinstripe: "Striped",
   check: "Check",
   checked: "Check",
   plaid: "Plaid",
@@ -73,6 +127,7 @@ const OCCASION_KEYWORDS: Record<string, string> = {
   wedding: "Weddings / Functions",
   reception: "Weddings / Functions",
   marriage: "Weddings / Functions",
+  sangeet: "Weddings / Functions",
   party: "Party",
   club: "Party",
   cocktail: "Party",
@@ -90,6 +145,7 @@ const OCCASION_KEYWORDS: Record<string, string> = {
   festival: "Festivals",
   diwali: "Festivals",
   eid: "Festivals",
+  pooja: "Festivals",
   travel: "Travel",
   vacation: "Travel",
   gym: "Gym / Sports",
@@ -103,6 +159,7 @@ const SEASON_KEYWORDS: Record<string, string> = {
   beach: "Summer",
   winter: "Winter",
   cold: "Winter",
+  warm: "Winter",
   monsoon: "Rainy",
   rain: "Rainy",
   spring: "Spring",
@@ -122,6 +179,8 @@ export function parseFashionSearchQuery(
   let matchedStyle: TaxonomyStyle | undefined;
   let detectedColor: string | undefined;
   let detectedPattern: string | undefined;
+  let detectedFit: string | undefined;
+  let detectedStyle: string | undefined;
   let detectedOccasion: string | undefined;
   let detectedSeason: string | undefined;
   let detectedGender: "Women" | "Men" | "Unisex" | "All" | undefined;
@@ -140,10 +199,15 @@ export function parseFashionSearchQuery(
     detectedGender = defaultGender;
   }
 
-  // 2. Budget extraction
-  const budgetMatches = lower.match(/(?:under|below|less than|within|budget|rs\.?|₹)\s*(\d{2,6})/i);
-  if (budgetMatches && budgetMatches[1]) {
-    detectedBudgetMax = parseInt(budgetMatches[1], 10);
+  // 2. Budget extraction (handles "under 1500", "below ₹2000", "under 1.5k", "under 2k")
+  const budgetKMatch = lower.match(/(?:under|below|less than|within|budget|max|rs\.?|₹)\s*(\d+(?:\.\d+)?)\s*k\b/i);
+  if (budgetKMatch && budgetKMatch[1]) {
+    detectedBudgetMax = Math.round(parseFloat(budgetKMatch[1]) * 1000);
+  } else {
+    const budgetMatches = lower.match(/(?:under|below|less than|within|budget|max|rs\.?|₹)\s*(\d{2,6})/i);
+    if (budgetMatches && budgetMatches[1]) {
+      detectedBudgetMax = parseInt(budgetMatches[1], 10);
+    }
   }
 
   // 3. Color extraction
@@ -155,7 +219,25 @@ export function parseFashionSearchQuery(
     }
   }
 
-  // 4. Pattern extraction
+  // 4. Fit extraction
+  for (const [kw, fitVal] of Object.entries(FIT_KEYWORDS)) {
+    const regex = new RegExp(`\\b${kw}\\b`, "i");
+    if (regex.test(lower)) {
+      detectedFit = fitVal;
+      break;
+    }
+  }
+
+  // 5. Style extraction
+  for (const [kw, stVal] of Object.entries(STYLE_KEYWORDS)) {
+    const regex = new RegExp(`\\b${kw}\\b`, "i");
+    if (regex.test(lower)) {
+      detectedStyle = stVal;
+      break;
+    }
+  }
+
+  // 6. Pattern extraction
   for (const [kw, pat] of Object.entries(PATTERN_KEYWORDS)) {
     const regex = new RegExp(`\\b${kw}\\b`, "i");
     if (regex.test(lower)) {
@@ -164,7 +246,7 @@ export function parseFashionSearchQuery(
     }
   }
 
-  // 5. Occasion extraction
+  // 7. Occasion extraction
   for (const [kw, occ] of Object.entries(OCCASION_KEYWORDS)) {
     if (lower.includes(kw)) {
       detectedOccasion = occ;
@@ -172,7 +254,7 @@ export function parseFashionSearchQuery(
     }
   }
 
-  // 6. Season extraction
+  // 8. Season extraction
   for (const [kw, sea] of Object.entries(SEASON_KEYWORDS)) {
     if (lower.includes(kw)) {
       detectedSeason = sea;
@@ -180,147 +262,157 @@ export function parseFashionSearchQuery(
     }
   }
 
-  // 7. Comfort extraction
+  // 9. Comfort extraction
   if (lower.includes("comfort") || lower.includes("breezy") || lower.includes("relaxed") || lower.includes("easy")) {
     comfortPriority = true;
   }
 
-  // 8. Category identification against OP Fashion Taxonomy
-  for (const catKey of Object.keys(OP_FASHION_TAXONOMY)) {
-    const cat = OP_FASHION_TAXONOMY[catKey];
-    for (const kw of cat.keywords) {
-      const regex = new RegExp(`\\b${kw}\\b`, "i");
-      if (regex.test(lower)) {
-        category = cat.name;
-        break;
-      }
-    }
-    if (category) break;
-  }
-
-  // Contextual fallback based on keywords
-  if (!category) {
-    if (
-      lower.includes("dress") ||
-      lower.includes("skirt") ||
-      lower.includes("gown") ||
-      lower.includes("frock")
-    ) {
-      category = "Dresses";
-      if (!detectedGender) detectedGender = "Women";
-    } else if (
-      lower.includes("shirt") ||
-      lower.includes("tee") ||
-      lower.includes("top") ||
-      lower.includes("polo") ||
-      lower.includes("hoodie") ||
-      lower.includes("sweatshirt")
-    ) {
-      category = "Tops";
-    } else if (
-      lower.includes("jeans") ||
-      lower.includes("trouser") ||
-      lower.includes("pant") ||
-      lower.includes("short") ||
-      lower.includes("chino")
-    ) {
-      category = "Bottoms";
-    } else if (
-      lower.includes("shoe") ||
-      lower.includes("sneaker") ||
-      lower.includes("boot") ||
-      lower.includes("heel") ||
-      lower.includes("loafer")
-    ) {
-      category = "Footwear";
-    } else if (
-      lower.includes("blazer") ||
-      lower.includes("jacket") ||
-      lower.includes("coat")
-    ) {
-      category = "Outerwear";
+  // 10. Direct Category & Subcategory Identification
+  if (/\b(kurta|kurti|saree|sari|lehenga|salwar|sherwani|dhoti|pajama|pyjama|indowestern|ethnic)\b/i.test(lower)) {
+    category = "Ethnic Wear";
+    if (lower.includes("kurta pajama") || lower.includes("kurta pyjama")) {
+      subcategory = "Kurta Pyjama";
+    } else if (lower.includes("kurta")) {
+      subcategory = "Kurta";
+    } else if (lower.includes("kurti")) {
+      subcategory = "Kurti";
+    } else if (lower.includes("saree") || lower.includes("sari")) {
+      subcategory = "Saree";
+    } else if (lower.includes("lehenga")) {
+      subcategory = "Lehenga";
+    } else if (lower.includes("sherwani")) {
+      subcategory = "Sherwani";
+    } else if (lower.includes("salwar")) {
+      subcategory = "Salwar Suit";
     } else {
-      category = detectedGender === "Men" ? "Tops" : "Dresses";
+      subcategory = "Ethnic Wear";
+    }
+  } else if (/\b(hoodie|hoodies|sweatshirt|sweatshirts)\b/i.test(lower)) {
+    category = "Tops";
+    subcategory = "Hoodie";
+  } else if (/\b(shirt|shirts|oxford|formal shirt|linen shirt|button down)\b/i.test(lower)) {
+    category = "Tops";
+    if (lower.includes("formal") || detectedStyle === "Formal") {
+      subcategory = "Formal Shirt";
+    } else if (lower.includes("linen")) {
+      subcategory = "Linen Shirt";
+    } else if (lower.includes("polo")) {
+      subcategory = "Polo Shirt";
+    } else {
+      subcategory = "Shirts";
+    }
+  } else if (/\b(t-shirt|tshirt|tee|tees)\b/i.test(lower)) {
+    category = "Tops";
+    subcategory = "T-Shirts";
+  } else if (/\b(sweater|sweaters|cardigan|knitwear|pullover)\b/i.test(lower)) {
+    category = "Tops";
+    subcategory = "Sweaters";
+  } else if (/\b(top|tops|blouse|tank top|crop top)\b/i.test(lower)) {
+    category = "Tops";
+    subcategory = lower.includes("blouse") ? "Blouse" : lower.includes("crop") ? "Crop Top" : "Tops";
+  } else if (/\b(jeans|denim|pants|trousers|chinos|shorts|skirt|joggers|cargo|cargo pants|leggings|bottoms)\b/i.test(lower)) {
+    category = "Bottoms";
+    if (lower.includes("jeans") || lower.includes("denim")) subcategory = "Jeans";
+    else if (lower.includes("chino")) subcategory = "Chinos";
+    else if (lower.includes("cargo")) subcategory = "Cargo Pants";
+    else if (lower.includes("jogger")) subcategory = "Joggers";
+    else if (lower.includes("short")) subcategory = "Shorts";
+    else if (lower.includes("skirt")) subcategory = "Skirt";
+    else subcategory = "Trousers";
+  } else if (/\b(dress|dresses|gown|frock|sundress|maxi|midi|mini|jumpsuit)\b/i.test(lower)) {
+    category = "Dresses";
+    if (lower.includes("summer") || detectedSeason === "Summer") subcategory = "Summer Dress";
+    else if (lower.includes("maxi")) subcategory = "Maxi Dress";
+    else if (lower.includes("midi")) subcategory = "Midi Dress";
+    else if (lower.includes("mini")) subcategory = "Mini Dress";
+    else if (lower.includes("gown") || lower.includes("evening")) subcategory = "Evening Gown";
+    else subcategory = "Dresses";
+    if (!detectedGender) detectedGender = "Women";
+  } else if (/\b(blazer|blazers|coat|coats|jacket|jackets|overcoat|trench coat|outerwear)\b/i.test(lower)) {
+    category = "Outerwear";
+    if (lower.includes("blazer")) subcategory = "Blazers";
+    else if (lower.includes("trench")) subcategory = "Trench Coat";
+    else if (lower.includes("coat")) subcategory = "Overcoat";
+    else subcategory = "Jackets";
+  } else if (/\b(shoes|sneakers|loafers|boots|sandals|heels|flats|footwear|kicks)\b/i.test(lower)) {
+    category = "Footwear";
+    if (lower.includes("sneaker") || lower.includes("kicks")) subcategory = "Sneakers";
+    else if (lower.includes("loafer")) subcategory = "Loafers";
+    else if (lower.includes("boot")) subcategory = "Boots";
+    else if (lower.includes("sandal")) subcategory = "Sandals";
+    else if (lower.includes("heel")) subcategory = "Heels";
+    else subcategory = "Shoes";
+  } else if (/\b(watch|watches|bag|bags|belt|belts|sunglasses|jewelry|jewellery|accessories)\b/i.test(lower)) {
+    category = "Accessories";
+    if (lower.includes("watch")) subcategory = "Watches";
+    else if (lower.includes("bag")) subcategory = "Bags";
+    else if (lower.includes("belt")) subcategory = "Belts";
+    else if (lower.includes("sunglasses")) subcategory = "Sunglasses";
+    else subcategory = "Accessories";
+  }
+
+  // Fallback to OP Fashion Taxonomy keywords if still unset
+  if (!category) {
+    for (const catKey of Object.keys(OP_FASHION_TAXONOMY)) {
+      const cat = OP_FASHION_TAXONOMY[catKey];
+      for (const kw of cat.keywords) {
+        const regex = new RegExp(`\\b${kw}\\b`, "i");
+        if (regex.test(lower)) {
+          category = cat.name;
+          break;
+        }
+      }
+      if (category) break;
     }
   }
 
-  // Find exact style matches within category
+  if (!category) {
+    category = detectedGender === "Men" ? "Tops" : "Dresses";
+    subcategory = category === "Tops" ? "Shirts" : "Dresses";
+  }
+
+  // Styles discovery
   const availableStyles = getStylesForCategory(category);
   for (const st of availableStyles) {
     for (const kw of st.keywords) {
       const regex = new RegExp(`\\b${kw}\\b`, "i");
       if (regex.test(lower)) {
         matchedStyle = st;
-        subcategory = st.name;
+        if (!subcategory) subcategory = st.name;
         break;
       }
     }
     if (matchedStyle) break;
   }
 
-  // If query mentions "maxi dress" specifically or "shirt"
-  if (!subcategory) {
-    if (lower.includes("maxi")) subcategory = "Maxi Dress";
-    else if (lower.includes("midi")) subcategory = "Midi Dress";
-    else if (lower.includes("mini")) subcategory = "Mini Dress";
-    else if (lower.includes("bodycon")) subcategory = "Bodycon Dress";
-    else if (lower.includes("a-line") || lower.includes("aline")) subcategory = "A-Line Dress";
-    else if (lower.includes("floral")) subcategory = "Floral Dress";
-    else if (lower.includes("shirt")) subcategory = "Shirt";
-    else if (lower.includes("t-shirt") || lower.includes("tshirt")) subcategory = "T-Shirt";
-    else if (lower.includes("jeans")) subcategory = "Jeans";
-    else if (lower.includes("sneaker")) subcategory = "Sneakers";
+  const discoveredStyles: string[] = availableStyles.map((s) => s.name);
+  if (subcategory && !discoveredStyles.includes(subcategory)) {
+    discoveredStyles.unshift(subcategory);
   }
 
-  // Discovered style list to show in the UI Style Discovery section
-  let discoveredStyles: string[] = [];
-  if (detectedOccasion === "Weddings / Functions") {
-    discoveredStyles = [
-      "Wedding/Occasion Dress",
-      "Evening Dress",
-      "Party Dress",
-      "Ethnic Dress",
-      "Maxi Dress",
-      "A-Line Dress",
-    ];
-  } else if (detectedSeason === "Summer" || comfortPriority) {
-    discoveredStyles = [
-      "Summer Dress",
-      "Floral Dress",
-      "Casual Dress",
-      "Maxi Dress",
-      "Wrap Dress",
-      "A-Line Dress",
-    ];
-  } else {
-    discoveredStyles = availableStyles.map((s) => s.name);
-  }
-
-  // Build clean search keywords for marketplaces with gender prefix
+  // Build clean search keywords
   const searchTerms: string[] = [];
-  if (detectedGender && detectedGender !== "All") {
-    searchTerms.push(detectedGender);
-  }
+  if (detectedGender && detectedGender !== "All") searchTerms.push(detectedGender);
   if (detectedColor) searchTerms.push(detectedColor);
-  if (detectedPattern && (!matchedStyle || !matchedStyle.name.includes(detectedPattern))) {
-    searchTerms.push(detectedPattern);
+  if (detectedFit && detectedFit !== "Regular") searchTerms.push(detectedFit);
+  if (detectedStyle && (!subcategory || !subcategory.toLowerCase().includes(detectedStyle.toLowerCase()))) {
+    searchTerms.push(detectedStyle);
   }
-  if (matchedStyle) {
-    searchTerms.push(matchedStyle.searchModifier);
-  } else if (subcategory) {
+  if (subcategory) {
     searchTerms.push(subcategory);
   } else if (category) {
     searchTerms.push(category);
   }
-  if (detectedOccasion && !matchedStyle) searchTerms.push(detectedOccasion);
+  if (detectedPattern) searchTerms.push(detectedPattern);
 
   return {
     rawQuery: query,
     category,
-    subcategory: subcategory || (matchedStyle ? matchedStyle.name : undefined),
-    style: matchedStyle ? matchedStyle.name : (subcategory || undefined),
+    subcategory,
+    style: detectedStyle || (matchedStyle ? matchedStyle.name : subcategory),
     color: detectedColor,
     pattern: detectedPattern,
+    fit: detectedFit,
     occasion: detectedOccasion,
     season: detectedSeason,
     gender: detectedGender || "All",
@@ -330,3 +422,4 @@ export function parseFashionSearchQuery(
     searchKeywords: searchTerms.join(" "),
   };
 }
+

@@ -7,6 +7,7 @@ import {
   MarketplaceProviderTestResult,
 } from "@/types/marketplace";
 import { IMarketplaceProvider } from "./MarketplaceProvider";
+import { serpApiProvider } from "./SerpApiProvider";
 import { localCatalogProvider } from "./LocalCatalogProvider";
 import { amazonMarketplaceProvider } from "./AmazonMarketplaceProvider";
 import { flipkartMarketplaceProvider } from "./FlipkartMarketplaceProvider";
@@ -19,9 +20,10 @@ export class MarketplaceProviderRegistry {
   private providers: Map<MarketplaceProviderName, IMarketplaceProvider> = new Map();
 
   constructor() {
-    this.registerProvider(localCatalogProvider);
+    this.registerProvider(serpApiProvider);
     this.registerProvider(amazonMarketplaceProvider);
     this.registerProvider(flipkartMarketplaceProvider);
+    this.registerProvider(localCatalogProvider);
   }
 
   public registerProvider(provider: IMarketplaceProvider): void {
@@ -39,15 +41,17 @@ export class MarketplaceProviderRegistry {
   /**
    * Returns providers that are enabled and ready to accept queries.
    */
-  public getActiveProviders(sourceFilter?: "All" | "Local" | "Amazon" | "Flipkart"): IMarketplaceProvider[] {
-    const isLocalEnabled = process.env.MARKETPLACE_LOCAL_ENABLED !== "false";
+  public getActiveProviders(sourceFilter?: string): IMarketplaceProvider[] {
+    const isSerpApiConfigured = serpApiProvider.isConfigured();
     const isAmazonEnabled = process.env.AMAZON_ENABLED === "true" || amazonMarketplaceProvider.isConfigured();
     const isFlipkartEnabled = process.env.FLIPKART_ENABLED === "true" || flipkartMarketplaceProvider.isConfigured();
+    const isLocalEnabled = process.env.MARKETPLACE_LOCAL_ENABLED !== "false";
 
     const activeList: IMarketplaceProvider[] = [];
 
-    if (isLocalEnabled) {
-      activeList.push(localCatalogProvider);
+    // Primary live product provider
+    if (isSerpApiConfigured) {
+      activeList.push(serpApiProvider);
     }
     if (isAmazonEnabled && amazonMarketplaceProvider.isConfigured()) {
       activeList.push(amazonMarketplaceProvider);
@@ -56,7 +60,12 @@ export class MarketplaceProviderRegistry {
       activeList.push(flipkartMarketplaceProvider);
     }
 
-    // Fallback: If no external provider is configured, always ensure local catalog is active
+    // If local catalog is enabled or no external providers are configured
+    if (isLocalEnabled) {
+      activeList.push(localCatalogProvider);
+    }
+
+    // Fallback: If no provider is in the list, include local catalog
     if (activeList.length === 0) {
       activeList.push(localCatalogProvider);
     }
@@ -65,7 +74,8 @@ export class MarketplaceProviderRegistry {
       return activeList;
     }
 
-    return activeList.filter((p) => p.name.toLowerCase() === sourceFilter.toLowerCase());
+    const matched = activeList.filter((p) => p.name.toLowerCase() === sourceFilter.toLowerCase());
+    return matched.length > 0 ? matched : activeList;
   }
 
   public getProviderStatuses(): MarketplaceProviderStatus[] {
@@ -94,3 +104,4 @@ export class MarketplaceProviderRegistry {
 }
 
 export const marketplaceProviderRegistry = new MarketplaceProviderRegistry();
+

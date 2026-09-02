@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -13,6 +13,8 @@ import {
 import { marketplaceService } from "@/services/marketplaceService";
 import { wardrobeService } from "@/services/wardrobeService";
 import { financeService } from "@/services/financeService";
+import { AppStorage } from "@/lib/storage";
+import { marketplaceContextEngine } from "@/lib/marketplace/MarketplaceContextEngine";
 import { PurchaseEvaluation } from "@/types/finance";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -35,49 +37,91 @@ import {
   ShieldAlert,
   CheckCircle2,
   Bookmark,
+  Calendar,
+  Sun,
+  Flame,
+  ThumbsUp,
+  SlidersHorizontal,
 } from "lucide-react";
 
 const SUGGESTED_SEARCHES = [
-  "Linen Shirt",
-  "Oversized Black T-Shirt",
-  "Floral Maxi Dress",
-  "Tailored Navy Chinos",
-  "White Leather Sneakers",
-  "Charcoal Wool Blazer",
-  "Slim Jeans under ₹2000",
-  "Wedding guest dress",
+  "Black oversized hoodie under ₹1500",
+  "White linen shirt",
+  "Red kurta under ₹2000",
+  "Floral summer dress",
+  "Tailored navy chinos",
+  "White leather sneakers",
+  "Charcoal wool blazer",
+  "Kurta pajama set",
+];
+
+type SectionTabKey =
+  | "pickedForYou"
+  | "bestMatch"
+  | "bestValue"
+  | "costEffective"
+  | "highestRated"
+  | "popular"
+  | "styleMatch"
+  | "wardrobeMatch"
+  | "eventMatch"
+  | "saved";
+
+const SECTION_TABS: Array<{ id: SectionTabKey; label: string; icon: any }> = [
+  { id: "pickedForYou", label: "Picked for You", icon: Sparkles },
+  { id: "bestMatch", label: "Best Match", icon: CheckCircle2 },
+  { id: "bestValue", label: "Best Value", icon: Star },
+  { id: "costEffective", label: "Under Budget", icon: Tag },
+  { id: "highestRated", label: "Highest Rated", icon: ThumbsUp },
+  { id: "popular", label: "Popular", icon: Flame },
+  { id: "styleMatch", label: "Style Match", icon: Layers },
+  { id: "wardrobeMatch", label: "Wardrobe Pairings", icon: Bookmark },
+  { id: "eventMatch", label: "Event Ready", icon: Calendar },
+  { id: "saved", label: "Wishlist", icon: Heart },
 ];
 
 export default function MarketplacePage() {
   const { user } = useAuth();
   const { success, error: toastError } = useToast();
 
-  const [searchQuery, setSearchQuery] = useState("Linen Shirt");
+  const [searchQuery, setSearchQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState<FashionParsedQuery | null>(null);
   const [searchResponse, setSearchResponse] = useState<MarketplaceSearchResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Active Section Tab
-  const [activeSection, setActiveSection] = useState<
-    "bestMatch" | "bestForYou" | "costEffective" | "highestRated" | "saved"
-  >("bestMatch");
+  const [activeSection, setActiveSection] = useState<SectionTabKey>("pickedForYou");
 
   // Saved Products State (User-Isolated)
   const [savedProducts, setSavedProducts] = useState<SavedMarketplaceProduct[]>([]);
 
   // Filters State
-  const [sourceFilter, setSourceFilter] = useState<"All" | "Local" | "Amazon" | "Flipkart">("All");
+  const [sourceFilter, setSourceFilter] = useState<string>("All");
   const [genderFilter, setGenderFilter] = useState<"Women" | "Men" | "All">(
-    (user?.gender as "Women" | "Men" | "All") || "Women"
+    (user?.gender as "Women" | "Men" | "All") || "All"
   );
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  const [selectedFit, setSelectedFit] = useState<string>("All");
   const [maxPrice, setMaxPrice] = useState<number | undefined>(undefined);
+  const [minRating, setMinRating] = useState<number | undefined>(undefined);
   const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
-  const [sortBy, setSortBy] = useState<"best_match" | "best_for_you" | "price_low" | "price_high" | "rating">(
-    "best_match"
-  );
+  const [selectedBrand, setSelectedBrand] = useState<string | undefined>(undefined);
+  const [sortBy, setSortBy] = useState<
+    | "recommended"
+    | "best_match"
+    | "best_for_you"
+    | "price_low"
+    | "price_high"
+    | "rating"
+    | "popular"
+    | "wardrobe_match"
+  >("recommended");
 
-  // Quick View Modal
+  // Show/Hide Filters drawer on mobile
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Quick View & Evaluator Modal
   const [quickViewProduct, setQuickViewProduct] = useState<MarketplaceProduct | null>(null);
   const [isAddingToWardrobe, setIsAddingToWardrobe] = useState(false);
   const [evalResult, setEvalResult] = useState<PurchaseEvaluation | null>(null);
@@ -104,13 +148,19 @@ export default function MarketplacePage() {
   // Execute Search
   const executeSearch = async (
     queryText: string,
-    stylesOverride?: string[],
-    sourceOverride?: "All" | "Local" | "Amazon" | "Flipkart",
-    genderOverride?: "Women" | "Men" | "All",
-    priceOverride?: number,
-    colorOverride?: string
+    overrides?: {
+      styles?: string[];
+      source?: string;
+      gender?: "Women" | "Men" | "All";
+      category?: string;
+      fit?: string;
+      price?: number;
+      rating?: number;
+      color?: string;
+      brand?: string;
+      sort?: any;
+    }
   ) => {
-    // Cancel in-flight request
     if (activeAbortController.current) {
       activeAbortController.current.abort();
     }
@@ -122,17 +172,29 @@ export default function MarketplacePage() {
 
     try {
       const filters: MarketplaceSearchFilters = {
-        source: sourceOverride || sourceFilter,
-        gender: genderOverride || genderFilter,
-        selectedStyles: stylesOverride !== undefined ? stylesOverride : selectedStyles,
-        maxPrice: priceOverride !== undefined ? priceOverride : maxPrice,
-        selectedColors: colorOverride ? [colorOverride] : selectedColor ? [selectedColor] : undefined,
-        sortBy,
+        source: overrides?.source !== undefined ? (overrides.source as any) : (sourceFilter as any),
+        gender: overrides?.gender || genderFilter,
+        selectedCategory: overrides?.category !== undefined ? (overrides.category === "All" ? undefined : overrides.category) : (selectedCategory === "All" ? undefined : selectedCategory),
+        selectedStyles: overrides?.styles !== undefined ? overrides.styles : selectedStyles,
+        selectedFits: overrides?.fit !== undefined ? (overrides.fit === "All" ? undefined : [overrides.fit]) : (selectedFit === "All" ? undefined : [selectedFit]),
+        maxPrice: overrides?.price !== undefined ? overrides.price : maxPrice,
+        minRating: overrides?.rating !== undefined ? overrides.rating : minRating,
+        selectedColors: overrides?.color ? [overrides.color] : selectedColor ? [selectedColor] : undefined,
+        selectedBrands: overrides?.brand ? [overrides.brand] : selectedBrand ? [selectedBrand] : undefined,
+        sortBy: overrides?.sort || sortBy,
       };
 
-      const response = await marketplaceService.search(queryText, filters, abortController.signal);
+      // Retrieve user context from storage
+      const userId = user?.id || AppStorage.getActiveUserId() || "";
+      const upcomingEvents = userId ? AppStorage.getEvents(userId) : [];
 
-      // Protect against stale async response overwrites
+      const response = await marketplaceService.search(
+        queryText,
+        filters,
+        { upcomingEvents },
+        abortController.signal
+      );
+
       if (currentReqId !== searchRequestId.current) {
         return;
       }
@@ -150,12 +212,12 @@ export default function MarketplacePage() {
       if (response.query.color && !selectedColor) {
         setSelectedColor(response.query.color);
       }
-      if (response.query.gender && response.query.gender !== "Unisex") {
+      if (response.query.gender && response.query.gender !== "Unisex" && response.query.gender !== "All") {
         setGenderFilter(response.query.gender as "Women" | "Men" | "All");
       }
     } catch (err: any) {
       if (err.name === "AbortError") return;
-      toastError("Search failed", err.message || "Could not fetch marketplace items");
+      toastError("Search note", err.message || "Could not fetch marketplace items");
     } finally {
       if (currentReqId === searchRequestId.current) {
         setIsLoading(false);
@@ -163,14 +225,28 @@ export default function MarketplacePage() {
     }
   };
 
-  // Initial Search on mount
+  // Initial automatic "Picked for You" generation on mount
   useEffect(() => {
-    const initialGender = (user?.gender as "Women" | "Men" | "All") || "Women";
-    setGenderFilter(initialGender);
-    const initialQuery = initialGender === "Men" ? "Linen Shirt" : "Floral Maxi Dress";
-    setSearchQuery(initialQuery);
-    executeSearch(initialQuery, undefined, undefined, initialGender);
-  }, [user]);
+    const userId = user?.id || AppStorage.getActiveUserId() || "";
+    const wardrobeItems = userId ? AppStorage.getWardrobe(userId) : [];
+    const upcomingEvents = userId ? AppStorage.getEvents(userId) : [];
+
+    // Synthesize auto shopping intent based on user preferences and context
+    const autoQuery = marketplaceContextEngine.generateAutomaticShoppingIntent(
+      user,
+      wardrobeItems,
+      upcomingEvents,
+      null
+    );
+
+    const initialTerm = autoQuery.rawQuery || "Linen Shirt";
+    setSearchQuery(initialTerm);
+    setActiveQuery(autoQuery);
+
+    executeSearch(initialTerm, {
+      gender: (user?.gender as "Women" | "Men" | "All") || "All",
+    });
+  }, [user?.id]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,7 +259,7 @@ export default function MarketplacePage() {
       ? selectedStyles.filter((s) => s !== style)
       : [...selectedStyles, style];
     setSelectedStyles(next);
-    executeSearch(searchQuery, next);
+    executeSearch(searchQuery, { styles: next });
   };
 
   const handleToggleSaved = (prod: MarketplaceProduct) => {
@@ -206,17 +282,17 @@ export default function MarketplacePage() {
       await wardrobeService.addItem({
         userId: user.id,
         name: prod.title,
-        category: prod.category as any,
+        category: (prod.category as any) || "Tops",
         subcategory: prod.subcategory || prod.category || "General",
         color: prod.colors?.[0] || "Black",
-        brand: prod.brand || prod.provider,
+        brand: prod.brand || prod.store || prod.provider,
         fit: prod.fit || "Regular",
         material: prod.material || undefined,
         season: ["All-Season"],
         occasion: prod.occasion ? [prod.occasion] : ["Casual"],
         wearCount: 0,
         imageUrl: prod.imageUrl,
-        notes: `Imported from ${prod.provider} (${prod.currency} ${prod.price})`,
+        notes: `Imported from ${prod.store || prod.provider} (${prod.currency} ${prod.price})`,
       });
       success("Added to Wardrobe!", `${prod.title} has been cataloged in your digital wardrobe.`);
     } catch (err: any) {
@@ -250,25 +326,31 @@ export default function MarketplacePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Simulate FashionCLIP visual feature extraction
     const detectedColor = "Black";
     const detectedCategory = "Tops";
     const prompt = `Visual search for ${detectedColor} ${detectedCategory}`;
     setSearchQuery(prompt);
-    executeSearch(prompt, undefined, undefined, undefined, undefined, detectedColor);
+    executeSearch(prompt, { color: detectedColor });
     success("Image Analyzed", "Searching visually similar products with FashionCLIP embeddings.");
   };
 
   // Compute products to render based on active section
-  const currentProducts: MarketplaceProduct[] = (() => {
+  const currentProducts: MarketplaceProduct[] = useMemo(() => {
     if (activeSection === "saved") {
       return savedProducts.map((sp) => sp.product);
     }
     if (!searchResponse) return [];
-    return searchResponse.sections[activeSection] || searchResponse.products || [];
-  })();
+    const sectionList = searchResponse.sections[activeSection];
+    if (Array.isArray(sectionList) && sectionList.length > 0) {
+      return sectionList;
+    }
+    return searchResponse.products || [];
+  }, [activeSection, searchResponse, savedProducts]);
 
-  const activeSavedIds = new Set(savedProducts.map((sp) => sp.product.id));
+  const activeSavedIds = useMemo(
+    () => new Set(savedProducts.map((sp) => sp.product.id)),
+    [savedProducts]
+  );
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 pb-16">
@@ -286,13 +368,13 @@ export default function MarketplacePage() {
         <div className="relative z-10 max-w-3xl space-y-3">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[var(--primary-soft)] border border-[var(--primary)]/20 text-xs font-bold text-[var(--primary)] shadow-xs">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>OP AI Marketplace & Wardrobe Synthesis</span>
+            <span>OP AI Real Product Recommendation Engine</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--text-primary)]">
-            Smart Shopping Intelligence
+            Personalized Marketplace
           </h1>
           <p className="text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
-            Multi-provider retail search with real-time wardrobe compatibility, duplicate protection, and &quot;Do I Need This?&quot; financial synthesis.
+            Real products aggregated from Google Shopping, Amazon & Flipkart with AI-powered wardrobe compatibility, skin-tone harmony, and grounded purchase explanations.
           </p>
         </div>
       </div>
@@ -306,10 +388,9 @@ export default function MarketplacePage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="E.g., 'White linen shirt', 'Black oversized tee under ₹1500', 'Wedding guest dress'..."
+              placeholder="E.g., 'Black oversized hoodie under ₹1500', 'Red kurta', 'Floral summer dress'..."
               className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border)] focus:border-[var(--primary)] text-sm font-medium text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition-all shadow-xs"
             />
-            {/* Camera / Image Search trigger */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -356,13 +437,8 @@ export default function MarketplacePage() {
           <div className="p-3.5 rounded-2xl bg-[var(--primary-soft)]/50 border border-[var(--primary)]/20 flex flex-wrap items-center justify-between gap-3 text-xs animate-fade-in">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-bold text-[var(--primary)] flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5" /> OP AI Understood:
+                <Sparkles className="w-3.5 h-3.5" /> OP AI Extracted:
               </span>
-              {activeQuery.gender && (
-                <span className="px-2.5 py-0.5 rounded-lg bg-[var(--surface)] border border-[var(--primary)]/30 font-bold text-[var(--text-primary)]">
-                  Focus: {activeQuery.gender === "All" ? "All Collections" : `${activeQuery.gender}'s Fashion`}
-                </span>
-              )}
               {activeQuery.category && (
                 <span className="px-2.5 py-0.5 rounded-lg bg-[var(--surface)] border border-[var(--primary)]/30 font-bold text-[var(--text-primary)]">
                   Category: {activeQuery.category}
@@ -370,7 +446,7 @@ export default function MarketplacePage() {
               )}
               {activeQuery.subcategory && (
                 <span className="px-2.5 py-0.5 rounded-lg bg-[var(--surface)] border border-[var(--primary)]/30 font-bold text-[var(--text-primary)]">
-                  Subcategory: {activeQuery.subcategory}
+                  Style: {activeQuery.subcategory}
                 </span>
               )}
               {activeQuery.fit && (
@@ -393,27 +469,32 @@ export default function MarketplacePage() {
                   Budget: ≤ ₹{activeQuery.budget.max}
                 </span>
               )}
+              {user?.sizes?.tops && (
+                <span className="px-2.5 py-0.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--text-muted)]">
+                  Size: {user.sizes.tops}
+                </span>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* STYLE DISCOVERY SECTION */}
+      {/* STYLE DISCOVERY CHIPS */}
       {searchResponse && searchResponse.discoveredStyles.length > 0 && (
-        <div className="p-6 rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-card)] space-y-3.5">
+        <div className="p-5 rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-card)] space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Tag className="w-4 h-4 text-[var(--primary)]" />
-              <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-primary)]">
-                {activeQuery?.category || "Fashion"} Style Variations
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-primary)]">
+                Style Discovery & Taxonomy
               </h3>
             </div>
             <span className="text-xs text-[var(--text-muted)]">
-              Click any style to refine search intent
+              Refine your search intent
             </span>
           </div>
 
-          <div className="flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2">
             {searchResponse.discoveredStyles.map((style) => {
               const isSelected = selectedStyles.includes(style);
               return (
@@ -421,7 +502,7 @@ export default function MarketplacePage() {
                   key={style}
                   type="button"
                   onClick={() => handleToggleStyleChip(style)}
-                  className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-semibold border transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
                     isSelected
                       ? "bg-[var(--primary)] text-white border-[var(--primary)] shadow-md"
                       : "bg-[var(--surface-soft)] text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--primary)] hover:text-[var(--primary)]"
@@ -436,107 +517,133 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* FILTER CONTROLS */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)]">
-        {/* Gender Focus Toggle */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-[var(--text-muted)] uppercase mr-1">Focus:</span>
-          {[
-            { id: "Women", label: "Women" },
-            { id: "Men", label: "Men" },
-            { id: "All", label: "All" },
-          ].map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => {
-                setGenderFilter(g.id as any);
-                executeSearch(searchQuery, undefined, undefined, g.id as any);
-              }}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                genderFilter === g.id
-                  ? "bg-[var(--primary)] text-white border-[var(--primary)] shadow-xs"
-                  : "bg-[var(--surface-soft)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--primary)]"
-              }`}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
+      {/* FILTER & SORT CONTROLS BAR */}
+      <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          {/* Gender / Focus */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-bold text-[var(--text-muted)] uppercase mr-1">Focus:</span>
+            {[
+              { id: "All", label: "All" },
+              { id: "Men", label: "Men" },
+              { id: "Women", label: "Women" },
+            ].map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => {
+                  setGenderFilter(g.id as any);
+                  executeSearch(searchQuery, { gender: g.id as any });
+                }}
+                className={`px-3 py-1 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  genderFilter === g.id
+                    ? "bg-[var(--primary)] text-white border-[var(--primary)] shadow-xs"
+                    : "bg-[var(--surface-soft)] text-[var(--text-secondary)] border-[var(--border)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
 
-        {/* Marketplace Source Filter */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-[var(--text-muted)] uppercase mr-1">Provider:</span>
-          {(["All", "Local", "Amazon", "Flipkart"] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => {
-                setSourceFilter(s);
-                executeSearch(searchQuery, undefined, s);
+          {/* Category Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-bold text-[var(--text-muted)] uppercase mr-1">Category:</span>
+            <select
+              value={selectedCategory}
+              onChange={(e) => {
+                setSelectedCategory(e.target.value);
+                executeSearch(searchQuery, { category: e.target.value });
               }}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                sourceFilter === s
-                  ? "bg-[var(--primary)] text-white border-[var(--primary)] shadow-xs"
-                  : "bg-[var(--surface-soft)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--primary)]"
-              }`}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[var(--surface-soft)] border border-[var(--border)] text-[var(--text-primary)] outline-none cursor-pointer"
             >
-              {s === "Local" ? "Local Catalog" : s}
-            </button>
-          ))}
-        </div>
+              <option value="All">All Categories</option>
+              <option value="Tops">Tops & Shirts</option>
+              <option value="Bottoms">Bottoms & Jeans</option>
+              <option value="Ethnic Wear">Ethnic Wear & Kurta</option>
+              <option value="Outerwear">Outerwear & Blazers</option>
+              <option value="Footwear">Footwear & Shoes</option>
+              <option value="Dresses">Dresses & Gowns</option>
+              <option value="Accessories">Accessories</option>
+            </select>
+          </div>
 
-        {/* Sort Option */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-[var(--text-muted)] uppercase">Sort:</span>
-          <select
-            value={sortBy}
-            onChange={(e) => {
-              setSortBy(e.target.value as any);
-              executeSearch(searchQuery);
-            }}
-            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[var(--surface-soft)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
-          >
-            <option value="best_match">OP AI Best Match</option>
-            <option value="best_for_you">Wardrobe Synergy</option>
-            <option value="price_low">Price: Low to High</option>
-            <option value="price_high">Price: High to Low</option>
-            <option value="rating">Highest Rated</option>
-          </select>
+          {/* Fit Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-bold text-[var(--text-muted)] uppercase mr-1">Fit:</span>
+            <select
+              value={selectedFit}
+              onChange={(e) => {
+                setSelectedFit(e.target.value);
+                executeSearch(searchQuery, { fit: e.target.value });
+              }}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[var(--surface-soft)] border border-[var(--border)] text-[var(--text-primary)] outline-none cursor-pointer"
+            >
+              <option value="All">All Fits</option>
+              <option value="Regular">Regular</option>
+              <option value="Oversized">Oversized</option>
+              <option value="Slim">Slim Fit</option>
+              <option value="Relaxed">Relaxed</option>
+              <option value="Tailored">Tailored</option>
+            </select>
+          </div>
+
+          {/* Sorting */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-bold text-[var(--text-muted)] uppercase mr-1">Sort:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => {
+                const s = e.target.value as any;
+                setSortBy(s);
+                executeSearch(searchQuery, { sort: s });
+              }}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[var(--surface-soft)] border border-[var(--border)] text-[var(--text-primary)] outline-none cursor-pointer"
+            >
+              <option value="recommended">Recommended (OP AI)</option>
+              <option value="best_match">Most Relevant</option>
+              <option value="price_low">Price: Low → High</option>
+              <option value="price_high">Price: High → Low</option>
+              <option value="rating">Highest Rated</option>
+              <option value="popular">Popular / Most Reviewed</option>
+              <option value="wardrobe_match">Wardrobe Match</option>
+            </select>
+          </div>
         </div>
       </div>
 
       {/* SECTION TABS */}
-      <div className="flex items-center gap-2 border-b border-[var(--border)] pb-2 overflow-x-auto">
-        {[
-          { id: "bestMatch", label: "Best Match", count: searchResponse?.sections.bestMatch?.length },
-          { id: "bestForYou", label: "Wardrobe Synergy", count: searchResponse?.sections.bestForYou?.length },
-          { id: "costEffective", label: "Value & Budget", count: searchResponse?.sections.costEffective?.length },
-          { id: "highestRated", label: "Top Rated", count: searchResponse?.sections.highestRated?.length },
-          { id: "saved", label: "Wishlist", count: savedProducts.length, icon: Bookmark },
-        ].map((tab) => {
-          const isActive = activeSection === tab.id;
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+        {SECTION_TABS.map((tab) => {
           const Icon = tab.icon;
+          const isActive = activeSection === tab.id;
+          const count =
+            tab.id === "saved"
+              ? savedProducts.length
+              : searchResponse?.sections?.[tab.id]?.length || 0;
+
           return (
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveSection(tab.id as any)}
-              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              onClick={() => setActiveSection(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer border shadow-xs ${
                 isActive
-                  ? "bg-[var(--primary)] text-white shadow-sm"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-soft)]"
+                  ? "bg-[var(--primary)] text-white border-[var(--primary)] shadow-md"
+                  : "bg-[var(--surface)] text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--primary)] hover:text-[var(--primary)]"
               }`}
             >
-              {Icon && <Icon className="w-3.5 h-3.5" />}
+              <Icon className="w-3.5 h-3.5" />
               <span>{tab.label}</span>
-              {tab.count !== undefined && (
+              {count > 0 && (
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                    isActive ? "bg-white/20 text-white" : "bg-[var(--surface-soft)] text-[var(--text-muted)]"
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    isActive
+                      ? "bg-white/20 text-white"
+                      : "bg-[var(--surface-soft)] text-[var(--text-muted)]"
                   }`}
                 >
-                  {tab.count}
+                  {count}
                 </span>
               )}
             </button>
@@ -544,189 +651,206 @@ export default function MarketplacePage() {
         })}
       </div>
 
-      {/* PRODUCT GRID */}
-      {currentProducts.length === 0 ? (
-        <div className="p-12 text-center rounded-3xl bg-[var(--surface)] border border-[var(--border)] shadow-[var(--shadow-card)] space-y-4">
-          <ShoppingBag className="w-12 h-12 text-[var(--text-muted)] mx-auto opacity-40" />
-          <h3 className="text-lg font-bold text-[var(--text-primary)]">
-            {activeSection === "saved"
-              ? "No saved wishlist items"
-              : `No products found matching "${searchQuery}"`}
-          </h3>
-          <p className="text-xs text-[var(--text-secondary)] max-w-md mx-auto">
-            {activeSection === "saved"
-              ? "Click the heart icon on any product to save it to your private wishlist."
-              : "Try adjusting your search terms, changing the category, or resetting your active filters."}
-          </p>
-          <div className="pt-2">
+      {/* PRODUCTS GRID / EMPTY STATE / FALLBACK */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="rounded-3xl bg-[var(--surface)] border border-[var(--border)] p-4 space-y-4 animate-pulse"
+            >
+              <div className="w-full aspect-square rounded-2xl bg-[var(--surface-soft)]" />
+              <div className="h-4 w-3/4 rounded-lg bg-[var(--surface-soft)]" />
+              <div className="h-4 w-1/2 rounded-lg bg-[var(--surface-soft)]" />
+              <div className="h-10 w-full rounded-xl bg-[var(--surface-soft)]" />
+            </div>
+          ))}
+        </div>
+      ) : searchResponse?.isFallback || currentProducts.length === 0 ? (
+        <div className="p-12 rounded-3xl bg-[var(--surface)] border border-[var(--border)] text-center space-y-4 shadow-[var(--shadow-card)]">
+          <div className="w-14 h-14 rounded-2xl bg-[var(--primary-soft)] border border-[var(--primary)]/20 flex items-center justify-center mx-auto text-[var(--primary)]">
+            <ShoppingBag className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5 max-w-md mx-auto">
+            <h3 className="text-lg font-bold text-[var(--text-primary)]">
+              {activeSection === "saved"
+                ? "Your Wishlist is Empty"
+                : searchResponse?.fallbackMessage || "No Products Found"}
+            </h3>
+            <p className="text-xs sm:text-sm text-[var(--text-secondary)]">
+              {activeSection === "saved"
+                ? "Click the heart icon on any recommendation to save items to your private wishlist."
+                : searchResponse?.fallbackMessage || "Try adjusting your search terms, price filter, or style keywords."}
+            </p>
+          </div>
+          {activeSection !== "saved" && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                setSelectedStyles([]);
-                setMaxPrice(undefined);
-                setSourceFilter("All");
-                setActiveSection("bestMatch");
-                executeSearch(searchQuery, [], "All", undefined, undefined);
-              }}
+              onClick={() => executeSearch("Linen Shirt")}
+              className="rounded-xl font-bold"
             >
-              <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Reset Filters
+              Reset to Recommendations
             </Button>
-          </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {currentProducts.map((prod) => {
             const isSaved = activeSavedIds.has(prod.id);
+
             return (
               <div
-                key={`${prod.provider}-${prod.id}`}
-                className="rounded-3xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--primary)] shadow-[var(--shadow-card)] hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden group"
+                key={prod.id}
+                className="group relative rounded-3xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--primary)]/50 transition-all duration-200 shadow-[var(--shadow-card)] hover:shadow-lg flex flex-col justify-between overflow-hidden"
               >
-                {/* Image & Source Badge */}
-                <div className="relative aspect-[3/4] overflow-hidden bg-black/5">
-                  <img
-                    src={prod.imageUrl}
-                    alt={prod.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
+                <div className="p-4 space-y-3.5">
+                  {/* Image Container */}
+                  <div className="relative w-full aspect-square rounded-2xl bg-[var(--surface-soft)] overflow-hidden">
+                    <img
+                      src={prod.imageUrl}
+                      alt={prod.title}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src =
+                          "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=600&auto=format&fit=crop&q=80";
+                      }}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
 
-                  {/* Clean Provider Badge */}
-                  <div className="absolute top-3 left-3">
-                    {prod.provider === "Amazon" ? (
-                      <span className="px-2.5 py-1 rounded-xl bg-black/80 text-[#FF9900] text-[10px] font-black uppercase tracking-wider backdrop-blur-md border border-[#FF9900]/40 shadow-sm flex items-center gap-1">
-                        Amazon
-                      </span>
-                    ) : prod.provider === "Flipkart" ? (
-                      <span className="px-2.5 py-1 rounded-xl bg-[#2874F0] text-white text-[10px] font-black uppercase tracking-wider shadow-sm flex items-center gap-1">
-                        Flipkart
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-xl bg-emerald-950/80 text-emerald-400 text-[10px] font-black uppercase tracking-wider backdrop-blur-md border border-emerald-500/30 shadow-sm flex items-center gap-1">
-                        Dev Catalog
-                      </span>
+                    {/* Merchant / Store Source Badge */}
+                    <div className="absolute top-3 left-3 px-2.5 py-1 rounded-xl bg-black/75 backdrop-blur-md text-[10px] font-bold text-white shadow-xs">
+                      {prod.store || prod.brand || prod.provider}
+                    </div>
+
+                    {/* Wishlist Heart Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSaved(prod)}
+                      className={`absolute top-3 right-3 p-2 rounded-xl backdrop-blur-md transition-all cursor-pointer shadow-xs ${
+                        isSaved
+                          ? "bg-red-500 text-white"
+                          : "bg-black/50 text-white hover:bg-black/80 hover:text-red-400"
+                      }`}
+                      title={isSaved ? "Remove from wishlist" : "Save to wishlist"}
+                    >
+                      <Heart className={`w-4 h-4 ${isSaved ? "fill-current" : ""}`} />
+                    </button>
+
+                    {/* Recommendation Badge */}
+                    {prod.recommendationBadge && (
+                      <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-xl bg-[var(--primary)] text-white text-[10px] font-extrabold shadow-sm flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" />
+                        <span>{prod.recommendationBadge}</span>
+                      </div>
                     )}
                   </div>
 
-                  {/* Save to Wishlist Heart Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleToggleSaved(prod)}
-                    className={`absolute top-3 right-3 p-2 rounded-xl backdrop-blur-md transition-all cursor-pointer shadow-sm ${
-                      isSaved
-                        ? "bg-rose-500 text-white"
-                        : "bg-black/40 text-white/80 hover:bg-black/60 hover:text-white"
-                    }`}
-                    title={isSaved ? "Remove from Wishlist" : "Save to Wishlist"}
-                  >
-                    <Heart className={`w-4 h-4 ${isSaved ? "fill-white" : ""}`} />
-                  </button>
-
-                  {/* Wardrobe Match Overlay Pill */}
-                  {prod.wardrobeCompatibilityScore !== undefined && (
-                    <div className="absolute bottom-3 left-3 right-3 px-3 py-1.5 rounded-xl bg-black/70 backdrop-blur-md border border-white/10 text-white text-[11px] font-bold flex items-center justify-between">
-                      <span className="flex items-center gap-1 text-emerald-400">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        {prod.wardrobeCompatibilityScore}% Wardrobe Match
-                      </span>
-                      {prod.needVerdict && (
-                        <span
-                          className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                            prod.needVerdict === "Essential Addition"
-                              ? "bg-emerald-500/30 text-emerald-300"
-                              : prod.needVerdict === "High Redundancy"
-                              ? "bg-rose-500/30 text-rose-300"
-                              : "bg-blue-500/30 text-blue-300"
-                          }`}
-                        >
-                          {prod.needVerdict}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Quick View Button on Hover */}
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity p-4">
-                    <button
-                      type="button"
-                      onClick={() => setQuickViewProduct(prod)}
-                      className="py-2.5 px-5 rounded-xl bg-white text-black text-xs font-bold shadow-lg hover:scale-105 transition-transform flex items-center gap-1.5 cursor-pointer"
-                    >
-                      View Details & AI Synthesis
-                    </button>
-                  </div>
-                </div>
-
-                {/* Product Info */}
-                <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                  {/* Title & Brand */}
                   <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
-                      <span className="font-bold text-[var(--text-primary)]">{prod.brand || prod.provider}</span>
-                      {prod.rating && (
-                        <span className="flex items-center gap-1 text-amber-500 font-bold">
-                          <Star className="w-3.5 h-3.5 fill-amber-500" />
-                          {prod.rating}
-                          {prod.reviewCount && (
-                            <span className="text-[10px] text-[var(--text-muted)]">({prod.reviewCount})</span>
-                          )}
-                        </span>
-                      )}
+                    <div className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
+                      {prod.brand || prod.category}
                     </div>
-
-                    <h4 className="font-bold text-sm text-[var(--text-primary)] line-clamp-2 leading-snug">
+                    <h4
+                      className="text-sm font-bold text-[var(--text-primary)] line-clamp-2 leading-snug"
+                      title={prod.title}
+                    >
                       {prod.title}
                     </h4>
                   </div>
 
-                  <div className="space-y-2 pt-2 border-t border-[var(--border-subtle)]">
-                    {/* Pricing */}
-                    <div className="flex items-baseline justify-between">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-lg font-black text-[var(--text-primary)]">
-                          ₹{prod.price}
+                  {/* Price & Rating */}
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-base font-extrabold text-[var(--text-primary)]">
+                        {prod.currency === "USD" ? "$" : "₹"}
+                        {prod.price.toLocaleString()}
+                      </span>
+                      {prod.originalPrice && prod.originalPrice > prod.price && (
+                        <span className="text-xs text-[var(--text-muted)] line-through">
+                          {prod.currency === "USD" ? "$" : "₹"}
+                          {prod.originalPrice.toLocaleString()}
                         </span>
-                        {prod.originalPrice && (
-                          <span className="text-xs text-[var(--text-muted)] line-through">
-                            ₹{prod.originalPrice}
-                          </span>
-                        )}
-                      </div>
-                      {prod.priceStatus === "development" && (
-                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
-                          Dev Catalog
+                      )}
+                      {prod.discountPercent && (
+                        <span className="text-[10px] font-bold text-emerald-500">
+                          {prod.discountPercent}% OFF
                         </span>
                       )}
                     </div>
 
-                    {/* Outward / Wardrobe Actions */}
-                    <div className="flex items-center gap-2 pt-1">
-                      {prod.productUrl ? (
-                        <a
-                          href={prod.productUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm ${
-                            prod.provider === "Amazon"
-                              ? "bg-[#FF9900] text-black hover:opacity-90"
-                              : prod.provider === "Flipkart"
-                              ? "bg-[#2874F0] text-white hover:opacity-90"
-                              : "bg-[var(--primary)] text-white hover:opacity-90"
-                          }`}
-                        >
-                          {prod.provider === "Local" ? "View Product" : `Buy on ${prod.provider}`} <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ) : null}
-
-                      <button
-                        type="button"
-                        onClick={() => handleAddToWardrobe(prod)}
-                        className="p-2.5 rounded-xl bg-[var(--surface-soft)] border border-[var(--border)] hover:border-[var(--primary)] text-[var(--text-primary)] hover:text-[var(--primary)] transition-all cursor-pointer"
-                        title="Add to My Wardrobe"
-                      >
-                        <PlusCircle className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {prod.rating !== null && prod.rating !== undefined && (
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-600 text-xs font-bold">
+                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                        <span>{prod.rating.toFixed(1)}</span>
+                        {prod.reviewCount ? (
+                          <span className="text-[10px] text-[var(--text-muted)]">
+                            ({prod.reviewCount})
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
+
+                  {/* Delivery Info */}
+                  {prod.deliveryInformation && (
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600">
+                      <Truck className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{prod.deliveryInformation}</span>
+                    </div>
+                  )}
+
+                  {/* Why OP AI Recommends It */}
+                  {prod.recommendationReason && (
+                    <div className="p-3 rounded-2xl bg-[var(--primary-soft)]/60 border border-[var(--primary)]/20 text-xs text-[var(--text-secondary)] space-y-1">
+                      <div className="flex items-center gap-1 font-bold text-[var(--primary)] text-[11px]">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Why OP AI Recommends It:</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed line-clamp-3">
+                        {prod.recommendationReason}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions Bar */}
+                <div className="p-4 pt-0 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* View Product External Button */}
+                    <a
+                      href={prod.productUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[var(--primary)] text-white text-xs font-bold hover:opacity-90 transition-all shadow-xs"
+                    >
+                      <span>View Product</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+
+                    {/* Add to Wardrobe Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleAddToWardrobe(prod)}
+                      disabled={isAddingToWardrobe}
+                      className="flex items-center justify-center gap-1 py-2.5 px-3 rounded-xl bg-[var(--surface-soft)] border border-[var(--border)] hover:border-[var(--primary)] text-xs font-bold text-[var(--text-primary)] transition-all cursor-pointer"
+                      title="Add to your digital wardrobe"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>+ Wardrobe</span>
+                    </button>
+                  </div>
+
+                  {/* Do I Need This? Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickViewProduct(prod);
+                      handleEvaluatePurchase(prod);
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-[var(--surface-soft)] text-[var(--text-muted)] hover:text-[var(--primary)] text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <span>&quot;Do I Need This?&quot; Financial & Redundancy Check</span>
+                  </button>
                 </div>
               </div>
             );
@@ -734,139 +858,94 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* QUICK VIEW MODAL */}
+      {/* "DO I NEED THIS?" EVALUATION MODAL */}
       <Modal
         isOpen={Boolean(quickViewProduct)}
         onClose={() => setQuickViewProduct(null)}
-        title={quickViewProduct?.title || "Product Details"}
-        size="2xl"
+        title="Purchase & Redundancy Intelligence"
+        size="md"
       >
         {quickViewProduct && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Image */}
-              <div className="aspect-[3/4] rounded-2xl overflow-hidden bg-black/5 border border-[var(--border)]">
-                <img
-                  src={quickViewProduct.imageUrl}
-                  alt={quickViewProduct.title}
-                  className="w-full h-full object-cover"
-                />
+            <div className="flex gap-4 items-center">
+              <img
+                src={quickViewProduct.imageUrl}
+                alt={quickViewProduct.title}
+                className="w-20 h-20 rounded-2xl object-cover border border-[var(--border)] shrink-0"
+              />
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-[var(--text-primary)] line-clamp-2">
+                  {quickViewProduct.title}
+                </h4>
+                <div className="text-sm font-extrabold text-[var(--primary)]">
+                  {quickViewProduct.currency === "USD" ? "$" : "₹"}
+                  {quickViewProduct.price.toLocaleString()}
+                </div>
               </div>
+            </div>
 
-              {/* Product Information */}
-              <div className="space-y-4 flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[var(--primary)] uppercase tracking-wider">
-                      {quickViewProduct.brand || quickViewProduct.provider} • {quickViewProduct.category}
+            {isEvaluatingProduct ? (
+              <div className="p-8 text-center space-y-2">
+                <Sparkles className="w-6 h-6 text-[var(--primary)] animate-spin mx-auto" />
+                <p className="text-xs font-bold text-[var(--text-muted)]">
+                  Evaluating wardrobe duplication and monthly budget impact...
+                </p>
+              </div>
+            ) : evalResult ? (
+              <div className="space-y-4">
+                <div
+                  className={`p-4 rounded-2xl border flex items-center justify-between ${
+                    evalResult.verdict === "High Wardrobe Value"
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600"
+                      : evalResult.verdict === "High Redundancy"
+                      ? "bg-amber-500/10 border-amber-500/30 text-amber-600"
+                      : "bg-blue-500/10 border-blue-500/30 text-blue-600"
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider">
+                      OP AI Verdict
                     </span>
-                    {quickViewProduct.rating && (
-                      <span className="flex items-center gap-1 text-xs font-bold text-amber-500">
-                        <Star className="w-3.5 h-3.5 fill-amber-500" /> {quickViewProduct.rating}
-                      </span>
-                    )}
+                    <h4 className="text-base font-extrabold">{evalResult.verdict}</h4>
                   </div>
-
-                  <h3 className="text-lg font-extrabold text-[var(--text-primary)] leading-snug">
-                    {quickViewProduct.title}
-                  </h3>
-
-                  {quickViewProduct.description && (
-                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                      {quickViewProduct.description}
-                    </p>
-                  )}
-
-                  {/* Attributes */}
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-2">
-                    {quickViewProduct.material && (
-                      <div className="p-2 rounded-xl bg-[var(--surface-soft)] border border-[var(--border)]">
-                        <span className="text-[10px] text-[var(--text-muted)] block">Material:</span>
-                        <span className="font-bold text-[var(--text-primary)]">{quickViewProduct.material}</span>
-                      </div>
-                    )}
-                    {quickViewProduct.fit && (
-                      <div className="p-2 rounded-xl bg-[var(--surface-soft)] border border-[var(--border)]">
-                        <span className="text-[10px] text-[var(--text-muted)] block">Fit:</span>
-                        <span className="font-bold text-[var(--text-primary)]">{quickViewProduct.fit}</span>
-                      </div>
-                    )}
-                    {quickViewProduct.style && (
-                      <div className="p-2 rounded-xl bg-[var(--surface-soft)] border border-[var(--border)]">
-                        <span className="text-[10px] text-[var(--text-muted)] block">Style:</span>
-                        <span className="font-bold text-[var(--text-primary)]">{quickViewProduct.style}</span>
-                      </div>
-                    )}
-                    {quickViewProduct.occasion && (
-                      <div className="p-2 rounded-xl bg-[var(--surface-soft)] border border-[var(--border)]">
-                        <span className="text-[10px] text-[var(--text-muted)] block">Occasion:</span>
-                        <span className="font-bold text-[var(--text-primary)]">{quickViewProduct.occasion}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* OP AI Wardrobe Synthesis */}
-                  <div className="p-3.5 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border)] space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-[var(--text-primary)] flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-[var(--primary)]" /> Wardrobe Synthesis:
-                      </span>
-                      <span className="font-black text-emerald-500">
-                        {quickViewProduct.wardrobeCompatibilityScore || 85}% Match
-                      </span>
-                    </div>
-                    {quickViewProduct.recommendationReason && (
-                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                        {quickViewProduct.recommendationReason}
-                      </p>
-                    )}
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold uppercase tracking-wider">
+                      Similar in Wardrobe
+                    </span>
+                    <div className="text-lg font-black">{evalResult.existingSimilarItemsCount} item(s)</div>
                   </div>
                 </div>
 
-                {/* Price & Action Buttons */}
-                <div className="space-y-3 pt-4 border-t border-[var(--border)]">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-extrabold text-[var(--text-primary)]">
-                      ₹{quickViewProduct.price}
-                    </span>
-                    {quickViewProduct.originalPrice && (
-                      <span className="text-sm text-[var(--text-muted)] line-through">
-                        ₹{quickViewProduct.originalPrice}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2">
-                    {quickViewProduct.productUrl && (
-                      <a
-                        href={quickViewProduct.productUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm ${
-                          quickViewProduct.provider === "Amazon"
-                            ? "bg-[#FF9900] text-black hover:opacity-90"
-                            : quickViewProduct.provider === "Flipkart"
-                            ? "bg-[#2874F0] text-white hover:opacity-90"
-                            : "bg-[var(--primary)] text-white hover:opacity-90"
-                        }`}
-                      >
-                        {quickViewProduct.provider === "Local" ? "View Product" : `Buy on ${quickViewProduct.provider}`}
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      isLoading={isAddingToWardrobe}
-                      onClick={() => handleAddToWardrobe(quickViewProduct)}
-                      className="px-4 rounded-xl"
-                    >
-                      <PlusCircle className="w-4 h-4 mr-1.5" /> Catalog in Wardrobe
-                    </Button>
+                <div className="space-y-2">
+                  <h5 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                    Analysis Breakdown
+                  </h5>
+                  <div className="p-3.5 rounded-2xl bg-[var(--surface-soft)] border border-[var(--border)] text-xs text-[var(--text-secondary)] space-y-2">
+                    <p className="leading-relaxed">{evalResult.explanation}</p>
+                    <p className="font-semibold text-[var(--text-primary)]">{evalResult.recommendation}</p>
                   </div>
                 </div>
               </div>
+            ) : null}
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-[var(--border)]">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setQuickViewProduct(null)}
+                className="rounded-xl font-bold"
+              >
+                Close
+              </Button>
+              <a
+                href={quickViewProduct.productUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 rounded-xl bg-[var(--primary)] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm hover:opacity-90"
+              >
+                <span>Proceed to Store</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
             </div>
           </div>
         )}

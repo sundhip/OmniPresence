@@ -260,11 +260,11 @@ export class MarketplaceRetrievalEngine {
 
     // 6. Rating Signal
     if (product.rating && product.rating >= 4.3 && product.reviewCount && product.reviewCount >= 50) {
-      reasons.push(`highly rated (${product.rating}★ from ${product.reviewCount}+ buyers)`);
+      reasons.push(`highly rated (${product.rating.toFixed(1)}★ from ${product.reviewCount}+ buyers)`);
     }
 
     if (reasons.length === 0) {
-      return `Recommended by OP AI based on style relevance and quality rating (${product.rating ? `${product.rating}★` : "Verified product"}).`;
+      return `Recommended by OP AI based on style relevance and quality rating (${product.rating ? `${product.rating.toFixed(1)}★` : "Verified product"}).`;
     }
 
     if (reasons.length === 1) {
